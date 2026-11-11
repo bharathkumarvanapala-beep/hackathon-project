@@ -362,3 +362,4 @@ export function publicSiteMarkup(lang = 'en') {
   </div>
   `;
 }
+
