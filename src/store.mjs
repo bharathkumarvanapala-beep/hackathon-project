@@ -7,16 +7,45 @@ import {applyMigrations} from './migrations.mjs';
 export const digest=value=>createHash('sha256').update(value).digest('hex');
 export function passwordHash(password){const salt=randomBytes(16).toString('hex');return `${salt}:${scryptSync(password,salt,64).toString('hex')}`;}
 export function passwordMatches(password,hash){const [salt,expected]=hash.split(':');return timingSafeEqual(Buffer.from(expected,'hex'),scryptSync(password,salt,64));}
+export const DEFAULT_DEMO_ACCOUNTS = [
+  { id: '11111111-0001-4000-8000-000000000001', email: 'asha@drishti.demo', name: 'ASHA Health Worker (Parvati)', role: 'worker', password: 'Drishti@2026' },
+  { id: '11111111-0002-4000-8000-000000000002', email: 'doctor@drishti.demo', name: 'Dr. K. Srinivas (Medical Officer)', role: 'doctor', password: 'Drishti@2026' },
+  { id: '11111111-0003-4000-8000-000000000003', email: 'specialist@drishti.demo', name: 'Dr. V. Ramana (Dental Specialist / MDS)', role: 'specialist', password: 'Drishti@2026' },
+  { id: '11111111-0004-4000-8000-000000000004', email: 'hospital@drishti.demo', name: 'Area Hospital Paderu Coordinator', role: 'navigator', password: 'Drishti@2026' },
+  { id: '11111111-0005-4000-8000-000000000005', email: 'admin@drishti.demo', name: 'ITDA District Health Administrator', role: 'admin', password: 'Drishti@2026' },
+  { id: '11111111-0006-4000-8000-000000000006', email: 'patient@drishti.demo', name: 'Lakshmi Gemmeli (Patient)', role: 'patient', password: 'Drishti@2026' },
+  { id: '9af38ff7-42c5-4576-95ca-e082a8d45941', email: 'worker@drishti.local', name: 'Health worker', role: 'worker', password: 'Worker@1234' },
+  { id: '564cba39-130e-4068-abd3-6fdf30e6be49', email: 'doctor@drishti.local', name: 'Medical officer', role: 'doctor', password: 'Doctor@1234' },
+  { id: '4648c900-3777-475d-b213-52e6aac5cd83', email: 'admin@drishti.local', name: 'District administrator', role: 'admin', password: 'Admin@1234' }
+];
+
+export function ensureDemoAccounts(db, directory) {
+  const file = join(directory, 'demo-accounts.json');
+  for (const acc of DEFAULT_DEMO_ACCOUNTS) {
+    const existing = db.prepare('SELECT id, password_hash FROM users WHERE email=?').get(acc.email);
+    if (!existing) {
+      db.prepare('INSERT INTO users(id, email, name, role, password_hash) VALUES(?,?,?,?,?)')
+        .run(acc.id, acc.email, acc.name, acc.role, passwordHash(acc.password));
+    } else if (acc.password) {
+      // Keep demo accounts synchronized with documented password
+      db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(passwordHash(acc.password), existing.id);
+    }
+  }
+  try {
+    writeFileSync(file, JSON.stringify({
+      notice: 'Aarogya Drishti Demonstration Accounts — Official Hackathon 2026',
+      defaultPassword: 'Drishti@2026',
+      accounts: DEFAULT_DEMO_ACCOUNTS
+    }, null, 2), { mode: 0o600 });
+  } catch {}
+}
+
 export function openStore(directory){
  mkdirSync(directory,{recursive:true});const db=new DatabaseSync(join(directory,'drishti.sqlite'));
  db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;`);
  applyMigrations(db);
  if(!db.prepare('SELECT value FROM meta WHERE key=?').get('instanceId'))db.prepare('INSERT INTO meta VALUES(?,?)').run('instanceId',randomUUID());
- if(!db.prepare('SELECT id FROM users LIMIT 1').get()){
-  const accounts=[['worker','Health worker','Worker@1234'],['doctor','Medical officer','Doctor@1234'],['admin','District administrator','Admin@1234']].map(([role,name,password])=>({id:randomUUID(),email:`${role}@drishti.local`,name,role,password}));
-  const file=join(directory,'demo-accounts.json');if(existsSync(file))throw Error('Existing account file found with an empty database; refusing to overwrite.');
-  const insert=db.prepare('INSERT INTO users(id,email,name,role,password_hash) VALUES(?,?,?,?,?)');db.exec('BEGIN');try{for(const u of accounts)insert.run(u.id,u.email,u.name,u.role,passwordHash(u.password));writeFileSync(file,JSON.stringify({notice:'Local synthetic demo accounts. Keep this file private.',accounts},null,2),{mode:0o600,flag:'wx'});db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
- }
+ ensureDemoAccounts(db, directory);
  try{chmodSync(directory,0o700);chmodSync(join(directory,'drishti.sqlite'),0o600);}catch{}return db;
 }
 export function transaction(db,work){db.exec('BEGIN IMMEDIATE');try{const value=work();db.exec('COMMIT');return value;}catch(e){db.exec('ROLLBACK');throw e;}}

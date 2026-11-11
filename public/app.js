@@ -7,36 +7,107 @@ import {isAndroid,configureServer,mountNativeConnection} from './platform.js';
 import {consultationMarkup,mountConsultations} from './consultations.js';
 import {voiceMarkup,mountVoice} from './voice-intake.js';
 import {qualityMetrics,overdue} from './domain.js';
-import {api,currentIdentity,forgetSession,recoverSession,login,logout,openCache,localPatients,createScreening,syncRecords,reviewPatient,saveLocal,updateReferral,syncSingleRecord,resolveConflict} from './client.js';
+import {
+  api,currentIdentity,forgetSession,recoverSession,login,logout,openCache,localPatients,
+  createScreening,syncRecords,reviewPatient,saveLocal,updateReferral,syncSingleRecord,
+  resolveConflict,fetchDashboardStats,listInvestigations,createInvestigation,updateInvestigation,
+  listNavigation,createNavigation
+} from './client.js';
 import {initI18n,t as i18nT,setLanguage as i18nSetLanguage} from './i18n.js';
 import {mountSyncDrawer,openSyncDrawer,closeSyncDrawer,openConflictModal} from './sync-drawer.js';
 import {loginMarkup} from './auth.js';
-const $=s=>document.querySelector(s);const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let lang=localStorage.getItem('drishti-lang')||'en',view='dashboard',selected=null,photo=null,quality=null,role='worker',patients=[],events=[],referralsList=[],automation={configured:false,pending:0,events:[],receipts:0};
-const copy={team:['Care team','సంరక్షణ బృందం'],dashboard:['Overview','అవలోకనం'],patients:['Patient registry','రోగుల నమోదు'],screening:['New screening','కొత్త స్క్రీనింగ్'],reviews:['Clinical reviews','వైద్య సమీక్షలు'],referrals:['Referrals & follow-up','రిఫరల్స్ & ఫాలో-అప్'],district:['District insights','జిల్లా విశ్లేషణ'],settings:['Sync & integrations','సింక్ & అనుసంధానాలు'],welcome:['Care begins with a connection.','సంరక్షణ అనుసంధానంతో మొదలవుతుంది.'],subtitle:['A clearer view of every patient’s journey, from screening to care.','స్క్రీనింగ్ నుండి చికిత్స వరకు ప్రతి రోగి ప్రయాణం.'],new:['New screening','కొత్త స్క్రీనింగ్'],total:['Patients registered','నమోదైన రోగులు'],pending:['Awaiting review','సమీక్ష కోసం వేచి'],referral:['Active referrals','క్రియాశీల రిఫరల్స్'],overdue:['Overdue follow-ups','గడువు దాటిన ఫాలో-అప్‌లు'],name:['Patient name','రోగి పేరు'],age:['Age','వయస్సు'],village:['Village / habitation','గ్రామం'],phone:['Phone (optional)','ఫోన్ (ఐచ్ఛికం)'],history:['History and symptoms','చరిత్ర మరియు లక్షణాలు'],consent:['I have explained this demonstration and obtained permission to store the submitted information on this device. Use synthetic data only.','ఈ ప్రదర్శనను వివరించి ఈ పరికరంలో సమాచారాన్ని నిల్వ చేయడానికి అనుమతి పొందాను. కల్పిత డేటాను మాత్రమే ఉపయోగించండి.'],save:['Save screening offline','స్క్రీనింగ్‌ను పరికరంలో సేవ్ చేయండి'],photo:['Oral photograph','నోటి ఫోటో'],capture:['Take or upload a photograph','ఫోటో తీయండి లేదా అప్‌లోడ్ చేయండి'],guide:['Use good lighting, keep the camera steady, and capture the area clearly.','మంచి వెలుతురులో కెమెరాను స్థిరంగా ఉంచి స్పష్టమైన ఫోటో తీయండి.'],search:['Search name, ID or village…','పేరు, ID లేదా గ్రామం వెతకండి…'],patient:['Patient','రోగి'],stage:['Care stage','సంరక్షణ దశ'],action:['Action','చర్య'],open:['Open record','రికార్డు తెరవండి'],local:['Saved on device','పరికరంలో సేవ్ అయింది'],sync:['Send queued events','క్యూలోని ఈవెంట్‌లను పంపండి'],online:['Online','ఆన్‌లైన్'],offline:['Offline · device storage active','ఆఫ్‌లైన్ · పరికర నిల్వ క్రియాశీలం'],demo:['SYNTHETIC DEMO','కల్పిత డేటా ప్రదర్శన'],review:['Clinical review','వైద్య సమీక్ష'],notes:['Clinical notes','వైద్య గమనికలు'],due:['Next appointment / follow-up','తదుపరి అపాయింట్‌మెంట్'],facility:['Referral facility','రిఫరల్ ఆసుపత్రి'],back:['Back to registry','నమోదు జాబితాకు'],empty:['No matching records yet.','ఇంకా సరిపోలే రికార్డులు లేవు.'],workflow:['Patient care pathway','రోగి సంరక్షణ మార్గం'],next:['Next actions','తదుపరి చర్యలు'],language:['Read capture guidance','ఫోటో సూచనలను వినండి']};
+import {publicSiteMarkup} from './public-site.js';
+import {ITDA_FACILITIES} from './facilities-data.js';
+
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+let lang=localStorage.getItem('drishti-lang')||'en',view='dashboard',selected=null,photo=null,quality=null;
+let role='worker',patients=[],events=[],referralsList=[],investigationsList=[],navigationList=[];
+let automation={configured:false,pending:0,events:[],receipts:0};
+let dashboardStats=null;
+
+const copy={
+  team:['Care team','సంరక్షణ బృందం'],dashboard:['Overview','అవలోకనం'],patients:['Patient registry','రోగుల నమోదు'],
+  screening:['New screening','కొత్త స్క్రీనింగ్'],reviews:['Clinical reviews','వైద్య సమీక్షలు'],
+  referrals:['Referrals & appointments','రిఫరల్స్ & అపాయింట్‌మెంట్లు'],district:['District insights','జిల్లా విశ్లేషణ'],
+  settings:['Sync & integrations','సింక్ & అనుసంధానాలు'],welcome:['Care begins with a connection.','సంరక్షణ అనుసంధానంతో మొదలవుతుంది.'],
+  subtitle:['A clearer view of every patient’s journey, from screening to care.','స్క్రీనింగ్ నుండి చికిత్స వరకు ప్రతి రోగి ప్రయాణం.'],
+  new:['New screening','కొత్త స్క్రీనింగ్'],total:['Patients registered','నమోదైన రోగులు'],pending:['Awaiting review','సమీక్ష కోసం వేచి'],
+  referral:['Active referrals','క్రియాశీల రిఫరల్స్'],overdue:['Overdue follow-ups','గడువు దాటిన ఫాలో-అప్‌లు'],
+  name:['Patient name','రోగి పేరు'],age:['Age','వయస్సు'],village:['Village / habitation','గ్రామం'],
+  phone:['Phone (optional)','ఫోన్ (ఐచ్ఛికం)'],history:['History and symptoms','చరిత్ర మరియు లక్షణాలు'],
+  consent:['I have explained this demonstration and obtained permission to store the submitted information on this device. Use synthetic data only.','ఈ ప్రదర్శనను వివరించి ఈ పరికరంలో సమాచారాన్ని నిల్వ చేయడానికి అనుమతి పొందాను. కల్పిత డేటాను మాత్రమే ఉపయోగించండి.'],
+  save:['Save screening offline','స్క్రీనింగ్‌ను పరికరంలో సేవ్ చేయండి'],photo:['Oral photograph','నోటి ఫోటో'],
+  capture:['Take or upload a photograph','ఫోటో తీయండి లేదా అప్‌లోడ్ చేయండి'],
+  guide:['Use good lighting, keep the camera steady, and capture the area clearly.','మంచి వెలుతురులో కెమెరాను స్థిరంగా ఉంచి స్పష్టమైన ఫోటో తీయండి.'],
+  search:['Search name, ID or village…','పేరు, ID లేదా గ్రామం వెతకండి…'],patient:['Patient','రోగి'],stage:['Care stage','సంరక్షణ దశ'],
+  action:['Action','చర్య'],open:['Open record','రికార్డు తెరవండి'],local:['Saved on device','పరికరంలో సేవ్ అయింది'],
+  sync:['Send queued events','క్యూలోని ఈవెంట్‌లను పంపండి'],online:['Online','ఆన్‌లైన్'],
+  offline:['Offline · device storage active','ఆఫ్‌లైన్ · పరికర నిల్వ క్రియాశీలం'],demo:['SYNTHETIC DEMO','కల్పిత డేటా ప్రదర్శన'],
+  review:['Clinical review','వైద్య సమీక్ష'],notes:['Clinical notes','వైద్య గమనికలు'],due:['Next appointment / follow-up','తదుపరి అపాయింట్‌మెంట్'],
+  facility:['Referral facility','రిఫరల్ ఆసుపత్రి'],back:['Back to registry','నమోదు జాబితాకు'],empty:['No matching records yet.','ఇంకా సరిపోలే రికార్డులు లేవు.'],
+  workflow:['Patient care pathway','రోగి సంరక్షణ మార్గం'],next:['Next actions','తదుపరి చర్యలు'],language:['Read capture guidance','ఫోటో సూచనలను వినండి']
+};
 const t=k=>i18nT(k,copy[k]?.[lang==='te'?1:0]||k);
-const stages={screened:['Awaiting review','సమీక్ష పెండింగ్'],reviewed:['Reviewed','సమీక్ష పూర్తయింది'],referred:['Referred','రిఫర్ చేయబడింది'],diagnostics:['Diagnostics','పరీక్షలు'],treatment:['Treatment follow-up','చికిత్స ఫాలో-అప్'],closed:['Care completed','సంరక్షణ పూర్తయింది']};const st=s=>stages[s]?.[lang==='te'?1:0]||s;
+const stages={screened:['Awaiting review','సమీక్ష పెండింగ్'],reviewed:['Reviewed','సమీక్ష పూర్తయింది'],referred:['Referred','రిఫర్ చేయబడింది'],diagnostics:['Diagnostics','పరీక్షలు'],treatment:['Treatment follow-up','చికిత్స ఫాలో-అప్'],closed:['Care completed','సంరక్షణ పూర్తయింది']};
+const st=s=>stages[s]?.[lang==='te'?1:0]||s;
+
 function toast(message){$('#toast').textContent=message;$('#toast').style.display='block';setTimeout(()=>$('#toast').style.display='none',4500);}
-async function refresh(){patients=await localPatients();events=patients.filter(p=>p._sync==='pending');if(navigator.onLine){try{const res=await api('/api/referrals');referralsList=res.referrals||[];}catch{}}}
-async function persist(p,type){if(type==='screening.created'){await createScreening(p);if(navigator.onLine){try{await syncRecords();}catch(e){toast(e.message);}}}else{await reviewPatient(p);}await refresh();}
+
+async function refresh(){
+  patients=await localPatients();
+  events=patients.filter(p=>p._sync==='pending');
+  if(navigator.onLine){
+    try{
+      const res=await api('/api/referrals');
+      referralsList=res.referrals||[];
+    }catch{}
+    try{
+      const invRes=await listInvestigations();
+      investigationsList=invRes.investigations||[];
+    }catch{}
+    try{
+      const navRes=await listNavigation();
+      navigationList=navRes.navigation||[];
+    }catch{}
+  }
+}
+
+async function persist(p,type){
+  if(type==='screening.created'){
+    await createScreening(p);
+    if(navigator.onLine){
+      try{await syncRecords();}catch(e){toast(e.message);}
+    }
+  }else{
+    await reviewPatient(p);
+  }
+  await refresh();
+}
+
 const icons=Object.fromEntries(['dashboard','patients','screening','reviews','referrals','district','team','settings'].map(key=>[key,icon(key)]));
+
 function shell(){
   const pending=patients.filter(p=>p._sync==='pending').length;
   const userObj = currentIdentity()?.user || { name: 'Health Worker', role: 'worker' };
+  
   const roleTitle = lang==='te'
-    ? ({worker:'హెల్త్ వర్కర్',doctor:'మెడికల్ ఆఫీసర్',admin:'అడ్మినిస్ట్రేటర్'}[role]||'వినియోగదారు')
-    : ({worker:'Health Worker',doctor:'Medical Officer',admin:'Administrator'}[role]||'User');
+    ? ({worker:'ఆశా / హెల్త్ వర్కర్',asha:'ఆశా కార్యకర్త',doctor:'మెడికల్ ఆఫీసర్',specialist:'స్పెషలిస్ట్ డెంటిస్ట్',hospital:'హాస్పిటల్ కోఆర్డినేటర్',navigator:'హాస్పిటల్ కోఆర్డినేటర్',admin:'జిల్లా అడ్మినిస్ట్రేటర్',patient:'రోగి'}[role]||'వినియోగదారు')
+    : ({worker:'Health Worker (ASHA)',asha:'Health Worker (ASHA)',doctor:'Medical Officer',specialist:'Dental Specialist',hospital:'Hospital Coordinator',navigator:'Hospital Coordinator',admin:'District Administrator',patient:'Patient'}[role]||'User');
+  
   const portalHeading = lang==='te'
-    ? ({worker:'హెల్త్ వర్కర్ పోర్టల్',doctor:'క్లినికల్ డాక్టర్ పోర్టల్',admin:'అడ్మినిస్ట్రేటర్ పోర్టల్'}[role]||'కేర్ పోర్టల్')
-    : ({worker:'Health Worker Portal',doctor:'Clinician Portal',admin:'Administrator Portal'}[role]||'Care Portal');
-  const portalSub = lang==='te' ? 'సమాజ ఆరోగ్య సమన్వయం' : 'Community Care Coordination';
+    ? ({worker:'ఆశా వర్కర్ పోర్టల్',asha:'ఆశా వర్కర్ పోర్టల్',doctor:'మెడికల్ ఆఫీసర్ పోర్టల్',specialist:'స్పెషలిస్ట్ పోర్టల్',hospital:'హాస్పిటల్ కోఆర్డినేటర్ పోర్టల్',navigator:'హాస్పిటల్ కోఆర్డినేటర్ పోర్టల్',admin:'జిల్లా అడ్మిన్ డాష్‌బోర్డ్',patient:'రోగి వ్యక్తిగత పోర్టల్'}[role]||'కేర్ పోర్టల్')
+    : ({worker:'Health Worker Portal',asha:'Health Worker Portal',doctor:'Medical Officer Portal',specialist:'Specialist Portal',hospital:'Hospital Coordinator Portal',navigator:'Hospital Coordinator Portal',admin:'District Admin Portal',patient:'Patient Portal'}[role]||'Care Portal');
+  
+  const portalSub = lang==='te' ? 'సమాజ ఆరోగ్య సమన్వయం · ఐటీడీఏ పాడేరు' : 'Community Care Coordination · ITDA Paderu';
   const pendingReviews = patients.filter(p=>p.stage==='screened').length;
 
   $('#app').innerHTML=`
   <div class="app-layout">
     <header class="app-header-banner">
       <div class="header-branding">
-        <img src="/brand-logo.svg" alt="Aarogya Drishti Logo" class="header-logo">
+        <img src="/brand-logo.svg" alt="Aarogya Drishti Logo" class="header-logo" onerror="this.src='/icon.svg'">
         <div class="header-brand-text">
           <h1 class="header-title">Aarogya Drishti</h1>
           <p class="header-hackathon">AAROHAN · Inter-Centre Hackathon 2026</p>
@@ -51,17 +122,20 @@ function shell(){
       <div class="header-right-side">
         <div class="header-landscape-art" aria-hidden="true"></div>
         <div class="header-controls">
+          <button class="btn" id="btn-view-public-site" style="padding:5px 11px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;background:#ffffff;border:1px solid #dce8e2;color:#043329;" title="View Public Website">
+            🌐 <span>${lang==='te'?'ప్రజా వెబ్‌సైట్':'Public Website'}</span>
+          </button>
+
           <div class="lang-switch-pills">
             <button class="lang-pill-btn ${lang==='en'?'active':''}" id="lang-btn-en" type="button">English</button>
             <button class="lang-pill-btn ${lang==='te'?'active':''}" id="lang-btn-te" type="button">తెలుగు</button>
           </div>
-          <button id="lang" style="display:none;" aria-hidden="true">${lang==='en'?'తెలుగు':'English'}</button>
           
           <div class="user-profile-badge" title="${esc(userObj.name)}">
             <span class="user-avatar-circle">${icon('user', 18)}</span>
             <div class="user-meta">
               <strong>${roleTitle}</strong>
-              <small>Demo User</small>
+              <small>${esc(userObj.email||'demo')}</small>
             </div>
           </div>
 
@@ -83,68 +157,116 @@ function shell(){
           <button class="sidebar-nav-btn ${view==='dashboard'?'active':''}" data-nav="dashboard">
             <span class="sidebar-nav-icon">${icon('home', 20)}</span>
             <div class="sidebar-nav-text">
-              <strong>Home</strong>
-              <small>హోమ్</small>
+              <strong>${lang==='te'?'హోమ్':'Home'}</strong>
+              <small>${lang==='te'?'అవలోకనం':'Overview'}</small>
             </div>
           </button>
 
-          ${role==='worker'?`
+          ${role==='patient'?`
+          <button class="sidebar-nav-btn ${view==='patient_portal'?'active':''}" data-nav="patient_portal">
+            <span class="sidebar-nav-icon">${icon('patients', 20)}</span>
+            <div class="sidebar-nav-text">
+              <strong>${lang==='te'?'నా ఆరోగ్య రికార్డు':'My Health Record'}</strong>
+              <small>${lang==='te'?'స్క్రీనింగ్ & సలహా':'Screening & Advice'}</small>
+            </div>
+          </button>
+          `:''}
+
+          ${['worker','asha'].includes(role)?`
           <button class="sidebar-nav-btn ${view==='screening'?'active':''}" data-nav="screening">
             <span class="sidebar-nav-icon">${icon('gallery', 20)}</span>
             <div class="sidebar-nav-text">
-              <strong>Upload Image</strong>
-              <small>ఫోటో అప్‌లోడ్</small>
+              <strong>${lang==='te'?'ఫోటో అప్‌లోడ్':'Upload Image'}</strong>
+              <small>${lang==='te'?'నోటి స్క్రీనింగ్':'Oral Screening'}</small>
             </div>
           </button>`:''}
 
+          ${role!=='patient'?`
           <button class="sidebar-nav-btn ${view==='patients'?'active':''}" data-nav="patients">
             <span class="sidebar-nav-icon">${icon('patients', 20)}</span>
             <div class="sidebar-nav-text">
-              <strong>Patient Records</strong>
-              <small>రోగి రికార్డులు</small>
+              <strong>${lang==='te'?'రోగి రికార్డులు':'Patient Records'}</strong>
+              <small>${lang==='te'?'నమోదు జాబితా':'Registry'}</small>
             </div>
-          </button>
+          </button>`:''}
 
+          ${role!=='patient'?`
           <button class="sidebar-nav-btn ${view==='reviews'?'active':''}" data-nav="reviews">
             <span class="sidebar-nav-icon">${icon('brain', 20)}</span>
             <div class="sidebar-nav-text">
-              <strong>AI Analysis Demo</strong>
-              <small>AI విశ్లేషణ డెమో</small>
+              <strong>${lang==='te'?'AI విశ్లేషణ డెమో':'AI Analysis Demo'}</strong>
+              <small>${lang==='te'?'జెమిని AI':'Gemini Vision'}</small>
             </div>
             ${pendingReviews?`<span class="sidebar-nav-badge">${pendingReviews}</span>`:''}
-          </button>
+          </button>`:''}
+
+          ${['doctor','specialist'].includes(role)?`
+          <button class="sidebar-nav-btn ${view==='investigations'?'active':''}" data-nav="investigations">
+            <span class="sidebar-nav-icon">🔬</span>
+            <div class="sidebar-nav-text">
+              <strong>${lang==='te'?'బయాప్సీ & పరీక్షలు':'Investigations'}</strong>
+              <small>${lang==='te'?'రోగనిర్ధారణ ఆర్డర్లు':'Biopsy & Pathology'}</small>
+            </div>
+          </button>`:''}
+
+          ${['hospital','navigator'].includes(role)?`
+          <button class="sidebar-nav-btn ${view==='navigation'?'active':''}" data-nav="navigation">
+            <span class="sidebar-nav-icon">🧭</span>
+            <div class="sidebar-nav-text">
+              <strong>${lang==='te'?'పేషెంట్ నావిగేషన్':'Patient Navigation'}</strong>
+              <small>${lang==='te'?'రవాణా & హాజరు':'Transport & Visits'}</small>
+            </div>
+          </button>`:''}
 
           <button class="sidebar-nav-btn ${view==='referrals'?'active':''}" data-nav="referrals">
             <span class="sidebar-nav-icon">${icon('calendar', 20)}</span>
             <div class="sidebar-nav-text">
-              <strong>Appointments</strong>
-              <small>అపాయింట్‌మెంట్లు</small>
+              <strong>${lang==='te'?'అపాయింట్‌మెంట్లు':'Appointments'}</strong>
+              <small>${lang==='te'?'రెఫరల్ ఫాలో-అప్':'Referrals Queue'}</small>
             </div>
           </button>
 
+          ${['admin','doctor','specialist'].includes(role)?`
+          <button class="sidebar-nav-btn ${view==='district'?'active':''}" data-nav="district">
+            <span class="sidebar-nav-icon">${icon('district', 20)}</span>
+            <div class="sidebar-nav-text">
+              <strong>${lang==='te'?'జిల్లా విశ్లేషణ':'District Insights'}</strong>
+              <small>${lang==='te'?'లైవ్ డేటాబేస్':'Live Metrics'}</small>
+            </div>
+          </button>`:''}
+
+          <button class="sidebar-nav-btn ${view==='facilities_portal'?'active':''}" data-nav="facilities_portal">
+            <span class="sidebar-nav-icon">🏥</span>
+            <div class="sidebar-nav-text">
+              <strong>${lang==='te'?'ఆసుపత్రుల నెట్‌వర్క్':'ITDA Facilities'}</strong>
+              <small>${lang==='te'?'పాడేరు కేంద్రాలు':'Hospital Network'}</small>
+            </div>
+          </button>
+
+          ${role!=='patient'?`
           <button class="sidebar-nav-btn" id="sync-drawer-btn" type="button" aria-label="Open offline sync drawer">
             <span class="sidebar-nav-icon">${icon('sync', 20)}</span>
             <div class="sidebar-nav-text">
-              <strong>Offline Sync</strong>
-              <small>ఆఫ్‌లైన్ సింక్</small>
+              <strong>${lang==='te'?'ఆఫ్‌లైన్ సింక్':'Offline Sync'}</strong>
+              <small>${lang==='te'?'పరికర నిల్వ':'Local Cache'}</small>
             </div>
             <span class="sidebar-nav-badge">${pending}</span>
-          </button>
+          </button>`:''}
 
           ${role==='admin'?`
           <button class="sidebar-nav-btn ${view==='team'?'active':''}" data-nav="team">
             <span class="sidebar-nav-icon">${icon('settings', 20)}</span>
             <div class="sidebar-nav-text">
-              <strong>Care Team</strong>
-              <small>బృందం</small>
+              <strong>${lang==='te'?'కేర్ టీమ్':'Care Team'}</strong>
+              <small>${lang==='te'?'సిబ్బంది నిర్వహణ':'Staff Directory'}</small>
             </div>
           </button>`:''}
 
           <button class="sidebar-nav-btn" id="sidebar-logout-btn" type="button">
             <span class="sidebar-nav-icon">${icon('logout', 20)}</span>
             <div class="sidebar-nav-text">
-              <strong>Logout</strong>
-              <small>లాగౌట్</small>
+              <strong>${lang==='te'?'లాగౌట్':'Logout'}</strong>
+              <small>${lang==='te'?'నిష్క్రమించు':'Sign out'}</small>
             </div>
           </button>
         </nav>
@@ -187,9 +309,8 @@ function shell(){
   const btnTe = $('#lang-btn-te');
   if (btnEn) btnEn.onclick = () => setLang('en');
   if (btnTe) btnTe.onclick = () => setLang('te');
-  const oldLang = $('#lang');
-  if (oldLang) oldLang.onclick = () => setLang(lang === 'en' ? 'te' : 'en');
 
+  if($('#btn-view-public-site')) $('#btn-view-public-site').onclick = () => showPublicSite();
   if($('#sync-drawer-btn')) $('#sync-drawer-btn').onclick=()=>openSyncDrawer();
   
   const handleLogout = async()=>{
@@ -205,71 +326,251 @@ function shell(){
   if($('#logout')) $('#logout').onclick = handleLogout;
   if($('#sidebar-logout-btn')) $('#sidebar-logout-btn').onclick = handleLogout;
 }
-function updateSyncDrawer(){mountSyncDrawer({patients,lang,onSyncAll:async()=>{await sync();},onSyncSingle:async(patientId)=>{try{const res=await syncSingleRecord(patientId);if(res.conflict){toast(lang==='te'?'వైరుధ్యం గుర్తించబడింది.':'Conflict detected.');const p=patients.find(pt=>pt.id===patientId);if(p)showConflictDialog(p);}else{toast(lang==='te'?'రికార్డు విజయవంతంగా సింక్ అయింది.':'Record synced successfully.');}await refresh();render();}catch(err){toast(err.message);await refresh();render();}},onResolveConflict:(patient)=>showConflictDialog(patient),onOpenRecord:(id)=>navigate('record',id)});}
-function showConflictDialog(patient){openConflictModal({localPatient:patient,serverPatient:patient._serverConflict,lang,onKeepServer:async(id)=>{try{await resolveConflict(id,'keep_server');toast(lang==='te'?'సర్వర్ రికార్డు ఉంచబడింది.':'Server record preserved.');await refresh();render();}catch(err){toast(err.message);}},onKeepLocal:async(id)=>{try{await resolveConflict(id,'overwrite_local');toast(lang==='te'?'పరికర రికార్డుతో భర్తీ చేయబడింది.':'Overwritten with device edit.');await refresh();render();}catch(err){toast(err.message);}}});}
 
-function updateConnection(){const badge=document.querySelector('.top-actions > .pill');if(badge){badge.classList.toggle('offline',!navigator.onLine);badge.textContent='● '+t(navigator.onLine?'online':'offline');}}
-function navigate(v,id){if(v==='screening'&&role!=='worker')return toast(lang==='te'?'స్క్రీనింగ్ నమోదు ఆరోగ్య కార్యకర్తకు మాత్రమే.':'Only health workers can register screenings.');view=v;selected=id||null;photo=null;quality=null;render();window.scrollTo(0,0);}
-function intro(title,sub='',button=false){return `<div class="intro"><div><h1>${title}</h1><p class="sub">${sub}</p></div>${button&&role==='worker'?`<button class="btn primary" data-new>＋ ${t('new')}</button>`:''}</div>`;}
-function stats(){return `<div class="stats">${[['total',patients.length,'♧'],['pending',patients.filter(p=>p.stage==='screened').length,'◷'],['referral',patients.filter(p=>['referred','diagnostics','treatment'].includes(p.stage)).length,'↗'],['overdue',patients.filter(p=>overdue(p)).length,'◴']].map(([key,value,icon])=>`<div class="stat"><div class="stat-top">${t(key)}<span class="stat-icon">${icons[key==='total'?'patients':key==='pending'?'reviews':key==='referral'?'referrals':'district']}</span></div><strong>${value.toString().padStart(2,'0')}</strong><small>${lang==='te'?'భాగస్వామ్య & పరికర రికార్డులు':'Shared records + pending device captures'}</small></div>`).join('')}</div>`;}
-function table(list){return list.length?`<div class="table-wrap"><table><thead><tr><th>${t('patient')}</th><th>${t('village')}</th><th>${t('stage')}</th><th>${t('action')}</th></tr></thead><tbody>${list.map(p=>`<tr><td><strong>${esc(p.name)}</strong><small>${esc(p.id)} ${p._sync==='pending'?' · ↑ pending upload':' · ✓ shared'} · ${p.age} ${lang==='te'?'సంవత్సరాలు':'years'}</small></td><td>${esc(p.village)}</td><td><span class="pill ${overdue(p)?'red':p.stage==='screened'?'amber':''}">${st(p.stage)}</span></td><td><button class="table-action" data-open="${esc(p.id)}">${t('open')} ↗</button></td></tr>`).join('')}</tbody></table></div>`:`<div class="empty">${t('empty')}</div>`;}
-function tasks(){const list=patients.filter(p=>overdue(p)||p.stage==='screened').slice(0,4);return list.map(p=>`<div class="task"><div class="task-icon">${overdue(p)?'◴':'▣'}</div><div><p><strong>${esc(p.name)}</strong></p><p>${overdue(p)?t('overdue'):t('pending')}</p><small>${esc(p.village)} · ${esc(p.due||p.createdAt.slice(0,10))}</small></div><button class="table-action" style="margin-left:auto" data-open="${esc(p.id)}">↗</button></div>`).join('')||`<p class="sub">${t('empty')}</p>`;}
-function dashboard(){return intro(t('welcome'),t('subtitle'),true)+`<section class="hero"><div class="hero-copy"><div class="eyebrow">CONNECTED CARE · COMMUNITY FIRST</div><h2>${lang==='te'?'ప్రతి స్క్రీనింగ్‌కు ఒక తదుపరి అడుగు.':'Every screening deserves a next step.'}</h2><p>${lang==='te'?'గ్రామంలో నమోదు. వైద్యునితో అనుసంధానం. ప్రతి రోగికి నిరంతర సంరక్షణ.':'From the first conversation to a clinician’s review. One connected journey, wherever care begins.'}</p><div class="hero-actions">${role==='worker'?`<button class="btn" data-assistant>${icon('spark',16)} ${lang==='te'?'సాథితో నమోదు':'Register with Saathi'}</button><button class="btn ghost" data-new>${t('new')} ${icon('arrow',15)}</button>`:`<button class="btn" data-go="patients">${t('patients')} ${icon('arrow',15)}</button>`}</div></div><div class="hero-art" aria-hidden="true"><div class="hero-orbit"></div><div class="hero-medallion">${icon('screening',46)}</div><span class="orbit-label one">${lang==='te'?'అనుసంధాన సంరక్షణ':'CONNECTED CARE'}</span><span class="orbit-label two"><i></i>${lang==='te'?'ఆఫ్‌లైన్ సిద్ధం':'OFFLINE READY'}</span></div></section>`+stats()+`<div class="columns"><div><section class="card"><div class="card-head"><h2>${lang==='te'?'ఇటీవలి రోగులు':'Recent patient journeys'}</h2><a data-go="patients">${t('patients')} →</a></div>${table([...patients].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,5))}</section><section class="card"><h2>${t('workflow')}</h2><div class="flow">${Object.entries(stages).map(([k,v],i)=>`<div class="${i===0?'done':''}"><b>${i+1}</b>${st(k)}</div>`).join('')}</div><p class="mini">${lang==='te'?'వైద్యుని సమీక్ష ద్వారా మాత్రమే సంరక్షణ నిర్ణయాలు.':'Care decisions remain with the reviewing clinician. AI assessment is not a diagnosis.'}</p></section></div><div><section class="card"><div class="card-head"><h2>${t('next')}</h2><span class="pill amber">${patients.filter(p=>overdue(p)||p.stage==='screened').length}</span></div>${tasks()}</section><section class="card"><h2>${lang==='te'?'గ్రామాల వారీగా స్క్రీనింగ్':'Screening by village'}</h2>${villageBars()}<p class="metric-note">${lang==='te'?'కల్పిత డేటా · వ్యాధి ప్రాబల్యం కాదు':'Synthetic counts · not disease prevalence'}</p></section></div></div>`;}
-function villageBars(){const counts={};patients.forEach(p=>counts[p.village]=(counts[p.village]||0)+1);const max=Math.max(1,...Object.values(counts));return Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([v,n])=>`<div class="bar-row"><span>${esc(v)}</span><div class="bar"><i style="width:${n/max*100}%"></i></div><b>${n}</b></div>`).join('')||`<p class="sub">${t('empty')}</p>`;}
+function updateSyncDrawer(){
+  mountSyncDrawer({
+    patients,lang,
+    onSyncAll:async()=>{await sync();},
+    onSyncSingle:async(patientId)=>{
+      try{
+        const res=await syncSingleRecord(patientId);
+        if(res.conflict){
+          toast(lang==='te'?'వైరుధ్యం గుర్తించబడింది.':'Conflict detected.');
+          const p=patients.find(pt=>pt.id===patientId);
+          if(p)showConflictDialog(p);
+        }else{
+          toast(lang==='te'?'రికార్డు విజయవంతంగా సింక్ అయింది.':'Record synced successfully.');
+        }
+        await refresh();render();
+      }catch(err){toast(err.message);await refresh();render();}
+    },
+    onResolveConflict:(patient)=>showConflictDialog(patient),
+    onOpenRecord:(id)=>navigate('record',id)
+  });
+}
+
+function showConflictDialog(patient){
+  openConflictModal({
+    localPatient:patient,serverPatient:patient._serverConflict,lang,
+    onKeepServer:async(id)=>{
+      try{
+        await resolveConflict(id,'keep_server');
+        toast(lang==='te'?'సర్వర్ రికార్డు ఉంచబడింది.':'Server record preserved.');
+        await refresh();render();
+      }catch(err){toast(err.message);}
+    },
+    onKeepLocal:async(id)=>{
+      try{
+        await resolveConflict(id,'overwrite_local');
+        toast(lang==='te'?'పరికర రికార్డుతో భర్తీ చేయబడింది.':'Overwritten with device edit.');
+        await refresh();render();
+      }catch(err){toast(err.message);}
+    }
+  });
+}
+
+function updateConnection(){
+  const badge=document.querySelector('.top-actions > .pill');
+  if(badge){
+    badge.classList.toggle('offline',!navigator.onLine);
+    badge.textContent='● '+t(navigator.onLine?'online':'offline');
+  }
+}
+
+function navigate(v,id){
+  if(v==='screening'&&!['worker','asha'].includes(role)){
+    return toast(lang==='te'?'స్క్రీనింగ్ నమోదు ఆరోగ్య కార్యకర్తకు మాత్రమే.':'Only health workers can register screenings.');
+  }
+  view=v;
+  selected=id||null;
+  photo=null;
+  quality=null;
+  render();
+  window.scrollTo(0,0);
+}
+
+function intro(title,sub='',button=false){
+  return `<div class="intro"><div><h1>${title}</h1><p class="sub">${sub}</p></div>${button&&['worker','asha'].includes(role)?`<button class="btn primary" data-new>＋ ${t('new')}</button>`:''}</div>`;
+}
+
+function stats(){
+  return `<div class="stats">${[
+    ['total',patients.length,'♧'],
+    ['pending',patients.filter(p=>p.stage==='screened').length,'◷'],
+    ['referral',patients.filter(p=>['referred','diagnostics','treatment'].includes(p.stage)).length,'↗'],
+    ['overdue',patients.filter(p=>overdue(p)).length,'◴']
+  ].map(([key,value])=>`
+    <div class="stat">
+      <div class="stat-top">${t(key)}<span class="stat-icon">${icons[key==='total'?'patients':key==='pending'?'reviews':key==='referral'?'referrals':'district']}</span></div>
+      <strong>${value.toString().padStart(2,'0')}</strong>
+      <small>${lang==='te'?'భాగస్వామ్య & పరికర రికార్డులు':'Shared records + pending device captures'}</small>
+    </div>`).join('')}</div>`;
+}
+
+function table(list){
+  return list.length?`
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>${t('patient')}</th><th>${t('village')}</th><th>${t('stage')}</th><th>${t('action')}</th></tr>
+      </thead>
+      <tbody>
+        ${list.map(p=>`
+          <tr>
+            <td>
+              <strong>${esc(p.name)}</strong>
+              <small>${esc(p.id)} ${p._sync==='pending'?' · ↑ pending upload':' · ✓ shared'} · ${p.age} ${lang==='te'?'సంవత్సరాలు':'years'}</small>
+            </td>
+            <td>${esc(p.village)}</td>
+            <td><span class="pill ${overdue(p)?'red':p.stage==='screened'?'amber':''}">${st(p.stage)}</span></td>
+            <td><button class="table-action" data-open="${esc(p.id)}">${t('open')} ↗</button></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>`:`<div class="empty">${t('empty')}</div>`;
+}
+
+function tasks(){
+  const list=patients.filter(p=>overdue(p)||p.stage==='screened').slice(0,4);
+  return list.map(p=>`
+    <div class="task">
+      <div class="task-icon">${overdue(p)?'◴':'▣'}</div>
+      <div>
+        <p><strong>${esc(p.name)}</strong></p>
+        <p>${overdue(p)?t('overdue'):t('pending')}</p>
+        <small>${esc(p.village)} · ${esc(p.due||p.createdAt?.slice(0,10)||'')}</small>
+      </div>
+      <button class="table-action" style="margin-left:auto" data-open="${esc(p.id)}">↗</button>
+    </div>`).join('')||`<p class="sub">${t('empty')}</p>`;
+}
+
+function dashboard(){
+  const isWorker = ['worker','asha'].includes(role);
+  return intro(t('welcome'),t('subtitle'),true)+`
+  <section class="hero">
+    <div class="hero-copy">
+      <div class="eyebrow">CONNECTED CARE · COMMUNITY FIRST</div>
+      <h2>${lang==='te'?'ప్రతి స్క్రీనింగ్‌కు ఒక తదుపరి అడుగు.':'Every screening deserves a next step.'}</h2>
+      <p>${lang==='te'?'గ్రామంలో నమోదు. వైద్యునితో అనుసంధానం. ప్రతి రోగికి నిరంతర సంరక్షణ.':'From the first conversation to a clinician’s review. One connected journey, wherever care begins.'}</p>
+      <div class="hero-actions">
+        ${isWorker?`
+          <button class="btn" data-assistant>${icon('spark',16)} ${lang==='te'?'సాథితో నమోదు':'Register with Saathi'}</button>
+          <button class="btn ghost" data-new>${t('new')} ${icon('arrow',15)}</button>
+        `:`
+          <button class="btn" data-go="patients">${t('patients')} ${icon('arrow',15)}</button>
+        `}
+      </div>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+      <div class="hero-orbit"></div>
+      <div class="hero-medallion">${icon('screening',46)}</div>
+      <span class="orbit-label one">${lang==='te'?'అనుసంధాన సంరక్షణ':'CONNECTED CARE'}</span>
+      <span class="orbit-label two"><i></i>${lang==='te'?'ఆఫ్‌లైన్ సిద్ధం':'OFFLINE READY'}</span>
+    </div>
+  </section>`+
+  stats()+`
+  <div class="columns">
+    <div>
+      <section class="card">
+        <div class="card-head">
+          <h2>${lang==='te'?'ఇటీవలి రోగులు':'Recent patient journeys'}</h2>
+          <a data-go="patients">${t('patients')} →</a>
+        </div>
+        ${table([...patients].sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')).slice(0,5))}
+      </section>
+      <section class="card">
+        <h2>${t('workflow')}</h2>
+        <div class="flow">${Object.entries(stages).map(([k],i)=>`<div class="${i===0?'done':''}"><b>${i+1}</b>${st(k)}</div>`).join('')}</div>
+        <p class="mini">${lang==='te'?'వైద్యుని సమీక్ష ద్వారా మాత్రమే సంరక్షణ నిర్ణయాలు.':'Care decisions remain with the reviewing clinician. AI assessment is not a diagnosis.'}</p>
+      </section>
+    </div>
+    <div>
+      <section class="card">
+        <div class="card-head">
+          <h2>${t('next')}</h2>
+          <span class="pill amber">${patients.filter(p=>overdue(p)||p.stage==='screened').length}</span>
+        </div>
+        ${tasks()}
+      </section>
+      <section class="card">
+        <h2>${lang==='te'?'గ్రామాల వారీగా స్క్రీనింగ్':'Screening by village'}</h2>
+        ${villageBars()}
+        <p class="metric-note">${lang==='te'?'కల్పిత డేటా · వ్యాధి ప్రాబల్యం కాదు':'Synthetic counts · not disease prevalence'}</p>
+      </section>
+    </div>
+  </div>`;
+}
+
+function villageBars(){
+  const counts={};
+  patients.forEach(p=>counts[p.village]=(counts[p.village]||0)+1);
+  const max=Math.max(1,...Object.values(counts));
+  return Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([v,n])=>`
+    <div class="bar-row">
+      <span>${esc(v)}</span>
+      <div class="bar"><i style="width:${n/max*100}%"></i></div>
+      <b>${n}</b>
+    </div>`).join('')||`<p class="sub">${t('empty')}</p>`;
+}
+
 function screening(){
   const isTe = lang === 'te';
   return `
   <div class="upload-view-container">
     <div class="upload-view-header">
-      <button class="back-link-nav" type="button" data-go="dashboard">← ${isTe ? 'డాష్‌బోర్డుకు తిరిగి వెళ్ళండి' : 'Back to Dashboard'}</button>
+      <button class="back-link-nav" type="button" data-go="dashboard" style="background:none;border:none;color:#043329;font-weight:600;cursor:pointer;margin-bottom:12px;font-size:12px;">← ${isTe ? 'డాష్‌బోర్డుకు తిరిగి వెళ్ళండి' : 'Back to Dashboard'}</button>
       
-      <div class="view-header-title-row">
-        <span class="view-header-icon">${icon('upload', 26)}</span>
+      <div class="view-header-title-row" style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+        <span class="view-header-icon" style="background:#059669;color:#fff;padding:8px;border-radius:10px;display:grid;place-items:center;">${icon('upload', 24)}</span>
         <div>
-          <h1>Oral Image Upload & Quality Check</h1>
-          <span class="view-sub-te">నోటి ఫోటో అప్‌లోడ్ & నాణ్యత తనిఖీ</span>
+          <h1 style="font-size:20px;margin:0;">Oral Image Upload & Quality Check</h1>
+          <span class="view-sub-te" style="color:#059669;font-size:12px;font-weight:600;">నోటి ఫోటో అప్‌లోడ్ & నాణ్యత తనిఖీ</span>
         </div>
       </div>
       
-      <p class="view-desc-en">Upload a clear image of the patient's oral cavity. You can choose from gallery or use the camera.</p>
-      <p class="view-desc-te">రోగి నోటి భాగం ఫోటోను అప్‌లోడ్ చేయండి. గ్యాలరీ నుండి ఎంచుకోవచ్చు లేదా కెమెరాతో తీసుకోవచ్చు.</p>
+      <p class="view-desc-en" style="margin:4px 0;font-size:12px;color:#4b6860;">Upload a clear image of the patient's oral cavity. You can choose from gallery or use the camera.</p>
+      <p class="view-desc-te" style="margin:0 0 16px 0;font-size:11px;color:#52756b;">రోగి నోటి భాగం ఫోటోను అప్‌లోడ్ చేయండి. గ్యాలరీ నుండి ఎంచుకోవచ్చు లేదా కెమెరాతో తీసుకోవచ్చు.</p>
     </div>
 
     <form id="screen-form">
       <div class="upload-columns-grid">
         <!-- CARD 1: Choose Image Source -->
         <section class="upload-card">
-          <div class="card-step-header">
+          <div class="card-step-header" style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
             <div class="card-step-badge">1</div>
             <div>
-              <h3>Choose Image Source</h3>
-              <span class="card-sub-te">చిత్రం ఎంచుకునే మార్గం</span>
+              <h3 style="margin:0;font-size:14px;">Choose Image Source</h3>
+              <span class="card-sub-te" style="font-size:10.5px;color:#059669;">చిత్రం ఎంచుకునే మార్గం</span>
             </div>
           </div>
 
           <div class="source-buttons-row">
-            <button type="button" class="source-select-btn" id="btn-source-camera">
+            <button type="button" class="source-select-btn source-btn" id="btn-source-camera">
               <span class="source-icon">${icon('camera', 22)}</span>
-              <strong>Camera</strong>
-              <span>Take a new photo</span>
-              <small>కొత్త ఫోటో తీయండి</small>
+              <div class="source-btn-text">
+                <strong>Camera</strong>
+                <span>Take a new photo</span>
+                <small>కొత్త ఫోటో తీయండి</small>
+              </div>
             </button>
-            <button type="button" class="source-select-btn" id="btn-source-gallery">
+            <button type="button" class="source-select-btn source-btn" id="btn-source-gallery">
               <span class="source-icon">${icon('gallery', 22)}</span>
-              <strong>Gallery</strong>
-              <span>Select from gallery</span>
-              <small>గ్యాలరీ నుండి ఎంచుకోండి</small>
+              <div class="source-btn-text">
+                <strong>Gallery</strong>
+                <span>Select from gallery</span>
+                <small>గ్యాలరీ నుండి ఎంచుకోండి</small>
+              </div>
             </button>
           </div>
 
-          <div class="formats-info-row">
-            <span class="formats-label">Supported formats</span>
-            <div class="format-tags">
+          <div class="formats-info-row formats-meta-row" style="margin:12px 0;">
+            <span class="formats-label">Supported formats:</span>
+            <div class="format-tags formats-badges">
               <span class="fmt-pill">JPG</span>
               <span class="fmt-pill">PNG</span>
               <span class="fmt-pill">WEBP</span>
             </div>
-            <span class="max-size-label">Max size: 10 MB</span>
+            <span class="max-size-label max-size-text">Max size: 8 MB</span>
           </div>
 
           <div class="drag-drop-zone" id="drop-zone">
@@ -318,11 +619,11 @@ function screening(){
 
         <!-- CARD 2: Image Preview -->
         <section class="upload-card">
-          <div class="card-step-header">
+          <div class="card-step-header" style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
             <div class="card-step-badge">2</div>
             <div>
-              <h3>Image Preview</h3>
-              <span class="card-sub-te">ఫోటో ప్రివ్యూ</span>
+              <h3 style="margin:0;font-size:14px;">Image Preview</h3>
+              <span class="card-sub-te" style="font-size:10.5px;color:#059669;">ఫోటో ప్రివ్యూ</span>
             </div>
           </div>
 
@@ -352,11 +653,11 @@ function screening(){
 
         <!-- CARD 3: Quality Check Result -->
         <section class="upload-card">
-          <div class="card-step-header">
+          <div class="card-step-header" style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
             <div class="card-step-badge">3</div>
             <div>
-              <h3>Quality Check Result</h3>
-              <span class="card-sub-te">నాణ్యత తనిఖీ ఫలితం</span>
+              <h3 style="margin:0;font-size:14px;">Quality Check Result</h3>
+              <span class="card-sub-te" style="font-size:10.5px;color:#059669;">నాణ్యత తనిఖీ ఫలితం</span>
             </div>
           </div>
 
@@ -379,22 +680,15 @@ function screening(){
             <li>
               <span class="check-bullet">${icon('checkCircle', 16)}</span>
               <div class="check-text">
-                <strong>Good lighting</strong>
-                <small>వెలుతురు సరైనది</small>
+                <strong>Good lighting & illumination</strong>
+                <small>వెలుతురు సరిపోయింది</small>
               </div>
             </li>
             <li>
               <span class="check-bullet">${icon('checkCircle', 16)}</span>
               <div class="check-text">
-                <strong>Resolution is good</strong>
-                <small>రిజల్యూషన్ బాగుంది</small>
-              </div>
-            </li>
-            <li>
-              <span class="check-bullet">${icon('checkCircle', 16)}</span>
-              <div class="check-text">
-                <strong>Valid file format</strong>
-                <small>సరైన ఫైల్ ఫార్మాట్</small>
+                <strong>Sufficient contrast</strong>
+                <small>సరైన కాంట్రాస్ట్</small>
               </div>
             </li>
           </ul>
@@ -402,115 +696,35 @@ function screening(){
           <div class="synthetic-info-notice">
             <span class="notice-info-icon">${icon('info', 18)}</span>
             <div class="notice-text">
-              <p>This is a synthetic demo image. It is not a real patient record.</p>
-              <small>ఇది కల్పిత డెమో చిత్రం. ఇది నిజమైన రోగి రికార్డు కాదు.</small>
+              <p>Frontline screening queue.</p>
+              <small>స్క్రీనింగ్ సేవ్ అయిన తర్వాత వైద్యుని సమీక్ష కోసం సమర్పించబడుతుంది.</small>
             </div>
           </div>
 
           <button type="submit" class="btn-save-screening-action" id="save-screening-btn" aria-label="Save screening offline">
-            ✓ Save screening offline
+            ✓ ${isTe ? 'స్క్రీనింగ్‌ను పరికరంలో సేవ్ చేయండి' : 'Save screening offline'}
           </button>
         </section>
       </div>
     </form>
-
-    <!-- BOTTOM ROW: Next Steps + Important Guidelines -->
-    <div class="bottom-guidance-grid">
-      <section class="next-steps-card">
-        <div class="section-title-row">
-          <span class="section-icon-circle">${icon('spark', 18)}</span>
-          <div>
-            <h4>Next Steps</h4>
-            <span class="te-sub-heading">తదుపరి దశలు</span>
-          </div>
-        </div>
-
-        <div class="stepper-horizontal-chain">
-          <div class="step-chain-node step-completed">
-            <div class="node-circle">
-              ${icon('gallery', 18)}
-              <span class="mini-check">✓</span>
-            </div>
-            <span class="node-title">1. Upload</span>
-            <span class="node-te">ఆప్‌లోడ్</span>
-          </div>
-          <div class="step-connector active"></div>
-
-          <div class="step-chain-node step-completed">
-            <div class="node-circle">
-              ${icon('checkCircle', 18)}
-              <span class="mini-check">✓</span>
-            </div>
-            <span class="node-title">2. Quality Check</span>
-            <span class="node-te">నాణ్యత తనిఖీ</span>
-          </div>
-          <div class="step-connector active"></div>
-
-          <div class="step-chain-node step-current">
-            <div class="node-circle">
-              ${icon('brain', 18)}
-            </div>
-            <span class="node-title">3. AI Analysis</span>
-            <span class="node-te">AI విశ్లేషణ</span>
-          </div>
-          <div class="step-connector"></div>
-
-          <div class="step-chain-node step-pending">
-            <div class="node-circle">
-              ${icon('user', 18)}
-            </div>
-            <span class="node-title">4. Doctor Review</span>
-            <span class="node-te">వైద్య సమీక్ష</span>
-          </div>
-          <div class="step-connector"></div>
-
-          <div class="step-chain-node step-pending">
-            <div class="node-circle">
-              ${icon('patients', 18)}
-            </div>
-            <span class="node-title">5. Referral</span>
-            <span class="node-te">రిఫరల్</span>
-          </div>
-          <div class="step-connector"></div>
-
-          <div class="step-chain-node step-pending">
-            <div class="node-circle">
-              ${icon('calendar', 18)}
-            </div>
-            <span class="node-title">6. Follow-up</span>
-            <span class="node-te">ఫాలో-అప్</span>
-          </div>
-        </div>
-      </section>
-
-      <section class="guidelines-card">
-        <div class="section-title-row">
-          <span class="section-icon-circle golden">${icon('bulb', 18)}</span>
-          <div>
-            <h4>Important Guidelines</h4>
-            <span class="te-sub-heading">ముఖ్యమైన మార్గదర్శకాలు</span>
-          </div>
-        </div>
-
-        <ul class="guidelines-bullets">
-          <li>
-            <strong>Use only synthetic or authorized test images.</strong>
-            <small>కల్పిత లేదా అనుమతించబడిన పరీక్షా చిత్రాలను మాత్రమే వాడండి.</small>
-          </li>
-          <li>
-            <strong>Do not upload real patient photos without consent.</strong>
-            <small>సమ్మతి లేకుండా నిజమైన రోగుల ఫోటోలను అప్‌లోడ్ చేయవద్దు.</small>
-          </li>
-          <li>
-            <strong>This is a research demo and not a medical diagnostic tool.</strong>
-            <small>ఇది పరిశోధన డెమో మాత్రమే; ఇది వైద్య నిర్ధారణ సాధనం కాదు.</small>
-          </li>
-        </ul>
-      </section>
-    </div>
   </div>`;
 }
-function registry(){const isReview=view==='reviews';let list=patients.filter(p=>isReview?p.stage==='screened':true);return intro(t(view),isReview?(lang==='te'?'మానవ సమీక్ష కోసం స్క్రీనింగ్‌లు.':'Screenings awaiting human assessment. No automated diagnosis.'):(lang==='te'?'ప్రతి రోగి, ప్రతి తదుపరి అడుగు.':'One record. Every next step accounted for.'),true)+`<div class="toolbar"><input class="search" id="search" placeholder="${t('search')}" aria-label="${t('search')}"><select class="language" id="filter"><option value="all">${lang==='te'?'అన్ని దశలు':'All stages'}</option>${Object.keys(stages).map(k=>`<option value="${k}">${st(k)}</option>`).join('')}<option value="overdue">${t('overdue')}</option></select></div><section class="card" id="list">${table(list)}</section>`;}
+
+function registry(){
+  const isReview=view==='reviews';
+  let list=patients.filter(p=>isReview?p.stage==='screened':true);
+  return intro(t(view),isReview?(lang==='te'?'మానవ సమీక్ష కోసం స్క్రీనింగ్‌లు. జెమిని AI నిర్ణయ సహాయం.':'Screenings awaiting clinician assessment. AI assists; doctors decide.'):(lang==='te'?'ప్రతి రోగి, ప్రతి తదుపరి అడుగు.':'One record. Every next step accounted for.'),true)+
+  `<div class="toolbar">
+    <input class="search" id="search" placeholder="${t('search')}" aria-label="${t('search')}">
+    <select class="language" id="filter">
+      <option value="all">${lang==='te'?'అన్ని దశలు':'All stages'}</option>
+      ${Object.keys(stages).map(k=>`<option value="${k}">${st(k)}</option>`).join('')}
+      <option value="overdue">${t('overdue')}</option>
+    </select>
+  </div>
+  <section class="card" id="list">${table(list)}</section>`;
+}
+
 function referralsQueue(){
   const isTe=lang==='te';
   let refList=referralsList;
@@ -541,17 +755,12 @@ function referralsQueue(){
         <option value="completed">${isTe?'పూర్తయింది':'Completed'}</option>
         <option value="overdue">${isTe?'గడువు దాటినవి మాత్రమే':'Overdue Only'}</option>
       </select>
-      <select class="language" id="ref-priority-filter">
-        <option value="all">${isTe?'అన్ని ప్రాధాన్యతలు':'All Priorities'}</option>
-        <option value="emergency">${isTe?'తక్షణ అత్యవసరం':'Emergency'}</option>
-        <option value="urgent">${isTe?'అత్యవసరం (1-2 రోజులు)':'Urgent'}</option>
-        <option value="routine">${isTe?'సాధారణ':'Routine'}</option>
-      </select>
     </div>
     <section class="card" id="referrals-queue-list">
       ${renderReferralCards(refList,isTe)}
     </section>`;
 }
+
 function renderReferralCards(list,isTe){
   if(!list.length)return `<div class="empty">${t('empty')}</div>`;
   return `<div style="display:grid;gap:16px;">
@@ -583,16 +792,16 @@ function renderReferralCards(list,isTe){
         </div>
         ${r.notes?`<p style="font-size:12px;margin:8px 0;color:#4a5c6d;"><em>${esc(r.notes)}</em></p>`:''}
         <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center;">
-          <span class="mini" style="margin-right:6px;">${isTe?'కార్యకర్త / నావిగేటర్ చర్య:':'Navigation Action:'}</span>
+          <span class="mini" style="margin-right:6px;">${isTe?'చర్య:':'Action:'}</span>
           ${r.status==='referred'?`<button class="btn" style="padding:6px 12px;font-size:11px;" data-ref-action="${esc(r.id)}" data-to-status="scheduled">📅 ${isTe?'షెడ్యూల్ చేయండి':'Schedule'}</button><button class="btn" style="padding:6px 12px;font-size:11px;" data-ref-action="${esc(r.id)}" data-to-status="attended">🏥 ${isTe?'హాజరయ్యారు':'Attended'}</button>`:''}
           ${r.status==='scheduled'?`<button class="btn" style="padding:6px 12px;font-size:11px;" data-ref-action="${esc(r.id)}" data-to-status="attended">🏥 ${isTe?'హాజరయ్యారు':'Mark Attended'}</button>`:''}
           ${r.status==='attended'?`<button class="btn primary" style="padding:6px 12px;font-size:11px;" data-ref-action="${esc(r.id)}" data-to-status="completed">✓ ${isTe?'చికిత్స పూర్తయింది':'Mark Completed'}</button>`:''}
-          ${['referred','scheduled'].includes(r.status)?`<button class="btn" style="padding:6px 12px;font-size:11px;color:#a95363;" data-ref-action="${esc(r.id)}" data-to-status="cancelled">✗ ${isTe?'రద్దు':'Cancel'}</button>`:''}
         </div>
       </div>`;
     }).join('')}
   </div>`;
 }
+
 function bindReferralsQueue(){
   document.querySelectorAll('[data-ref-action]').forEach(btn=>{
     btn.onclick=async()=>{
@@ -604,37 +813,694 @@ function bindReferralsQueue(){
       }catch(err){toast(err.message);btn.disabled=false;}
     };
   });
-  const searchEl=$('#ref-search'),statusEl=$('#ref-status-filter'),priorityEl=$('#ref-priority-filter');
+  const searchEl=$('#ref-search'),statusEl=$('#ref-status-filter');
   const filterQueue=()=>{
-    const q=(searchEl?.value||'').toLowerCase(),stVal=statusEl?.value||'all',prVal=priorityEl?.value||'all';
+    const q=(searchEl?.value||'').toLowerCase(),stVal=statusEl?.value||'all';
     let list=referralsList.length?referralsList:patients.filter(p=>['referred','diagnostics','treatment'].includes(p.stage)).map(p=>({
       id:'REF-'+p.id,patientId:p.id,facility:p.facility||'Area Hospital Paderu',priority:p.priority||'routine',
-      due_date:p.due||'',status:p.stage==='referred'?'referred':'scheduled',
-      notes:p.notes||'',quadrant:p.quadrant||'GENERAL',
-      patient:{id:p.id,name:p.name,village:p.village,phone:p.phone,age:p.age},
-      isOverdue:overdue(p)
+      due_date:p.due||'',status:p.stage==='referred'?'referred':'scheduled',notes:p.notes||'',quadrant:p.quadrant||'GENERAL',
+      patient:{id:p.id,name:p.name,village:p.village,phone:p.phone,age:p.age},isOverdue:overdue(p)
     }));
     const filtered=list.filter(r=>{
       const p=r.patient||{};
       const matchText=`${p.name||''} ${p.id||r.patientId} ${p.village||''} ${r.facility||''}`.toLowerCase().includes(q);
       const matchStatus=stVal==='all'||(stVal==='overdue'?r.isOverdue:r.status===stVal);
-      const matchPriority=prVal==='all'||r.priority===prVal;
-      return matchText&&matchStatus&&matchPriority;
+      return matchText&&matchStatus;
     });
     const host=$('#referrals-queue-list');
     if(host){host.innerHTML=renderReferralCards(filtered,lang==='te');bindReferralsQueue();bindCommon();}
   };
   if(searchEl)searchEl.oninput=filterQueue;
   if(statusEl)statusEl.onchange=filterQueue;
-  if(priorityEl)priorityEl.onchange=filterQueue;
 }
-function record(){const p=patients.find(p=>p.id===selected);if(!p)return intro(t('empty'));const canReview=role==='doctor'&&Boolean(p.version)&&navigator.onLine;return `<button class="btn" data-go="patients">← ${t('back')}</button><div style="height:22px"></div><div class="record-top"><div class="avatar">${esc(p.name.slice(0,1))}</div><div><h1>${esc(p.name)}</h1><p class="sub">${esc(p.id)} · ${p.age} ${lang==='te'?'సంవత్సరాలు':'years'} · ${esc(p.village)}</p></div><span class="pill" style="margin-left:auto">${st(p.stage)}</span></div><p class="mini">${p._sync==='pending'?(lang==='te'?'పరికరంలో మాత్రమే · అప్‌లోడ్ పెండింగ్':'On this device only · upload pending'):(lang==='te'?'భాగస్వామ్య రికార్డు':'Shared patient record')} · ${lang==='te'?'వెర్షన్':'Version'} ${p.version||'—'}</p><button class="btn" id="refresh-record">↻ ${lang==='te'?'భాగస్వామ్య రికార్డు రిఫ్రెష్':'Refresh shared record'}</button><div class="flow">${Object.keys(stages).map((k,i)=>`<div class="${i<=Object.keys(stages).indexOf(p.stage)?'done':''}"><b>${i+1}</b>${st(k)}</div>`).join('')}</div><div class="columns"><div><section class="card"><h2>${t('photo')}</h2><div style="margin:18px 0">${p.photo?`<img class="preview" src="${esc(p.photo)}" alt="Submitted demonstration oral photograph">`:`<div class="empty">${lang==='te'?'ఫోటో ఇంకా జోడించలేదు':'Photo pending — no image assessment available'}</div>`}</div><span class="pill ${p.quality?.pass?'':'amber'}">${p.photo?(p.quality?.pass?(lang==='te'?'ప్రాథమిక నాణ్యత పరీక్ష ఉత్తీర్ణం':'Basic image-quality check passed'):(lang==='te'?'మెరుగైన ఫోటో అవసరం':'Retake recommended')):(lang==='te'?'ఫోటో పెండింగ్':'Photo pending')}</span><p class="mini">${lang==='te'?'ఈ పరీక్ష కేవలం వెలుతురు, కాంట్రాస్ట్, వివరాలను కొలుస్తుంది.':'Checks measure lighting, contrast and pixel detail only. They do not validate image anatomy.'}</p></section>${researchMarkup(p,lang)}<section class="card"><h2>${t('history')}</h2><p>${esc(p.history||'—')}</p><p class="mini">${lang==='te'?'పరికర నిల్వ అనుమతి నమోదు అయింది':'Device-storage consent recorded'} · ${esc(p.createdAt.slice(0,10))}</p></section></div><div><section class="card"><h2>${t('review')}</h2><p class="mini">${lang==='te'?'వైద్యుని ఖాతాకు మాత్రమే సమీక్ష అనుమతి. భాగస్వామ్య సర్వర్ కనెక్షన్ అవసరం.':'Only a signed-in doctor can review. A shared-server connection is required.'}</p>${!canReview?`<div class="notice">${lang==='te'?'వైద్యునిగా లాగిన్ అయి సర్వర్‌కు కనెక్ట్ అవ్వండి. ముందుగా స్క్రీనింగ్‌ను అప్‌లోడ్ చేయండి.':'Sign in with a doctor account and connect to the server. The screening must be uploaded first.'}</div>`:''}<form id="review-form"><div class="field"><label for="quadrant">${lang==='te'?'నోటి భాగం / క్వాడ్రంట్':'Oral Quadrant / Region'}</label><select id="quadrant" name="quadrant" ${!canReview?'disabled':''}><option value="GENERAL" ${p.quadrant==='GENERAL'?'selected':''}>${lang==='te'?'సాధారణ నోటి పరీక్ష':'General Oral Cavity'}</option><option value="Q1_UR" ${p.quadrant==='Q1_UR'?'selected':''}>${lang==='te'?'ఎగువ కుడి (Q1, దంతాలు 11-18)':'Upper Right (Q1 Maxillary, 11-18)'}</option><option value="Q2_UL" ${p.quadrant==='Q2_UL'?'selected':''}>${lang==='te'?'ఎగువ ఎడమ (Q2, దంతాలు 21-28)':'Upper Left (Q2 Maxillary, 21-28)'}</option><option value="Q3_LL" ${p.quadrant==='Q3_LL'?'selected':''}>${lang==='te'?'దిగువ ఎడమ (Q3, దంతాలు 31-38)':'Lower Left (Q3 Mandibular, 31-38)'}</option><option value="Q4_LR" ${p.quadrant==='Q4_LR'?'selected':''}>${lang==='te'?'దిగువ కుడి (Q4, దంతాలు 41-48)':'Lower Right (Q4 Mandibular, 41-48)'}</option><option value="MUCOSA" ${p.quadrant==='MUCOSA'?'selected':''}>${lang==='te'?'నోటి శ్లేష్మం / నాలుక / పెదవి':'Oral Mucosa / Tongue / Lip'}</option></select></div><div class="field"><label for="provisionalDiagnosis">${lang==='te'?'ప్రాథమిక రోగ నిర్ధారణ':'Provisional Clinical Impression'}</label><input id="provisionalDiagnosis" name="provisionalDiagnosis" maxlength="200" value="${esc(p.provisionalDiagnosis||'')}" placeholder="${lang==='te'?'ఉదా. ల్యూకోప్లాకియా అనుమానం, కేరీస్ Q1':'e.g. Suspected leukoplakia, Dental caries Q1'}" ${!canReview?'disabled':''}></div><div class="field"><label for="notes">${t('notes')} *</label><textarea id="notes" name="notes" required maxlength="4000" ${!canReview?'disabled':''}>${esc(p.notes||'')}</textarea></div><div class="field"><label for="stage">${t('stage')}</label><select id="stage" name="stage" ${!canReview?'disabled':''}>${Object.keys(stages).filter(k=>k!=='screened').map(k=>`<option value="${k}" ${k===p.stage?'selected':''}>${st(k)}</option>`).join('')}</select></div><div class="field"><label for="facility">${t('facility')}</label><input id="facility" name="facility" maxlength="150" value="${esc(p.facility||'')}" list="facilities-list" ${!canReview?'disabled':''}><datalist id="facilities-list"><option>Area Hospital Paderu</option><option>Community Health Centre Araku</option><option>CHC Chintapalle</option><option>Primary Health Centre Hukumpeta</option><option>ITDA Mobile Dental Screening Unit</option><option>King George Hospital Visakhapatnam (Tertiary)</option></datalist></div><div class="field"><label for="priority">${lang==='te'?'రెఫరల్ ప్రాధాన్యత':'Referral Priority'}</label><select id="priority" name="priority" ${!canReview?'disabled':''}><option value="routine" ${p.priority==='routine'?'selected':''}>${lang==='te'?'సాధారణ (Routine)':'Routine'}</option><option value="urgent" ${p.priority==='urgent'?'selected':''}>${lang==='te'?'అత్యవసరం (Urgent - 1-2 days)':'Urgent (1-2 days)'}</option><option value="emergency" ${p.priority==='emergency'?'selected':''}>${lang==='te'?'తక్షణ అత్యవసరం (Emergency)':'Emergency (Immediate)'}</option></select></div><div class="field"><label for="due">${t('due')}</label><input id="due" name="due" type="date" value="${esc(p.due||'')}" ${!canReview?'disabled':''}></div><div class="actions"><button class="btn primary" ${!canReview?'disabled':''}>${lang==='te'?'సమీక్ష సేవ్ చేయండి':'Save review & next step'}</button></div></form></section><section class="card"><h2>${lang==='te'?'సంరక్షణ చరిత్ర':'Care timeline'}</h2><div class="timeline">${[...(p.timeline||[])].reverse().map(e=>`<p>${esc(lang==='te'?e.te:e.text)}<small>${new Date(e.at).toLocaleString(lang==='te'?'te-IN':'en-IN')}</small></p>`).join('')}</div></section></div></div>${careMarkup(p,lang)}${voiceMarkup(p,lang)}${consultationMarkup(lang)}`;}
-function district(){return intro(t('district'),lang==='te'?'స్క్రీనింగ్ మరియు సంరక్షణ లోపాలపై దృష్టి.':'Visibility into screening activity and gaps in care.')+stats()+`<section class="card"><h2>${lang==='te'?'పరీక్షలు మరియు చికిత్స పురోగతి':'Diagnostics and treatment activity'}</h2><div class="stats">${[['diagnostic',lang==='te'?'పరీక్షలు / బయాప్సీ':'Diagnostics / biopsy'],['treatment',lang==='te'?'చికిత్స':'Treatment'],['followup',lang==='te'?'ఫాలో-అప్':'Follow-up']].map(([type,label])=>{const entries=patients.flatMap(p=>p.careEntries||[]).filter(e=>e.type===type);return `<div class="stat"><span>${label}</span><strong>${entries.filter(e=>e.status==='completed').length}</strong><small>${lang==='te'?'పూర్తి':'completed'} · ${entries.filter(e=>e.status==='planned').length} ${lang==='te'?'ప్రణాళిక':'planned'} · ${entries.filter(e=>e.status==='missed').length} ${lang==='te'?'హాజరు కాలేదు':'missed'}</small></div>`;}).join('')}</div></section><div class="columns"><section class="card"><h2>${lang==='te'?'గ్రామాల వారీగా నమోదులు':'Registration coverage by village'}</h2>${villageBars()}<div class="notice">${lang==='te'?'ఈ గణాంకాలు కల్పిత రికార్డుల సంఖ్యలు మాత్రమే. జనాభా కవరేజ్ లేదా వ్యాధి రేట్లు కావు.':'Counts reflect synthetic records on this browser. Population coverage and disease rates cannot be inferred.'}</div></section><section class="card"><h2>${lang==='te'?'సంరక్షణ దశల పంపిణీ':'Care pipeline'}</h2>${Object.keys(stages).map(k=>{const n=patients.filter(p=>p.stage===k).length;return `<div class="bar-row"><span>${st(k)}</span><div class="bar"><i style="width:${n/Math.max(1,patients.length)*100}%"></i></div><b>${n}</b></div>`;}).join('')}</section></div><section class="card"><h2>${t('overdue')}</h2>${table(patients.filter(p=>overdue(p)))}</section>`;}
-function settings(){return intro(t('settings'),lang==='te'?'భాగస్వామ్య రికార్డులు, ఆఫ్‌లైన్ అప్‌లోడ్‌లు మరియు n8n.':'Shared records, offline uploads and local n8n automation.')+`<div class="columns"><div><section class="card"><h2>${lang==='te'?'భాగస్వామ్య రోగి డేటాబేస్':'Shared patient database'}</h2><p>${lang==='te'?'ఆరోగ్య కార్యకర్త మరియు వైద్యుడు ఒకే సర్వర్ డేటాబేస్‌ను ఉపయోగిస్తారు. ఆఫ్‌లైన్ స్క్రీనింగ్‌లు ఈ ఖాతా పరికర నిల్వలో వేచి ఉంటాయి.':'Workers and doctors use the same server database. Offline screenings wait in this account’s device cache until uploaded.'}</p><div class="flow"><div class="done"><b>${patients.filter(p=>p._sync==='shared').length}</b>${lang==='te'?'భాగస్వామ్య రికార్డులు':'Shared records'}</div><div><b>${events.length}</b>${lang==='te'?'అప్‌లోడ్ పెండింగ్':'Device uploads pending'}</div></div><button class="btn primary" id="sync">↻ ${lang==='te'?'రికార్డులు & n8n సింక్':'Sync records & n8n'}</button><p class="mini">${lang==='te'?'సర్వర్ సింక్ చేసిన రికార్డులనే వైద్యుడు చూడగలరు.':'Doctors can see a screening after it reaches the shared server. Offline review edits are disabled to prevent conflicting clinical changes.'}</p></section><section class="card"><h2>n8n · ${automation.configured?(lang==='te'?'అమర్చబడింది':'Configured'):(lang==='te'?'అనుసంధానం పెండింగ్':'Connection pending')}</h2><p>${lang==='te'?'పేరు, ఫోన్, ఫోటోలు లేకుండా ఈవెంట్‌లు n8nకు పంపబడతాయి.':'The server delivers events without names, phone numbers, histories or photos. n8n calls back with a receipt; duplicate receipts are ignored.'}</p><div class="flow"><div><b>${automation.pending||0}</b>${lang==='te'?'n8n పెండింగ్':'n8n pending'}</div><div class="done"><b>${automation.receipts||0}</b>${lang==='te'?'n8n రసీదులు':'n8n receipts'}</div></div><p class="mini">${lang==='te'?'రసీదు అనేది ఈవెంట్ స్వీకరణ మాత్రమే; రోగికి సందేశం చేరినట్టు కాదు.':'A receipt confirms workflow intake, not delivery of a message to a person.'}</p></section><section class="card"><h2>${lang==='te'?'పరికర బ్యాకప్':'Device backup'}</h2><div class="actions"><button class="btn" id="export">↓ ${lang==='te'?'బ్యాకప్ ఎగుమతి':'Export backup'}</button>${role==='worker'?`<label class="btn">↑ ${lang==='te'?'స్క్రీనింగ్‌ల దిగుమతి':'Import screenings'}<input id="import" type="file" accept="application/json" hidden></label><button class="btn" id="legacy-import">${lang==='te'?'మునుపటి పరికర రికార్డుల దిగుమతి':'Import previous device records'}</button><button class="btn" id="seed">${lang==='te'?'కల్పిత ఉదాహరణలు':'Add synthetic examples'}</button>`:''}</div><p class="mini">${lang==='te'?'దిగుమతి చేసిన కొత్త స్క్రీనింగ్‌లు సమీక్ష కోసం వేచి ఉంటాయి. పాత రికార్డులు భద్రంగా ఉంటాయి.':'New imported screenings are queued for review. Existing records are preserved; imported clinical decisions are not trusted.'}</p><p class="mini" id="storage-status"></p><div class="notice">${lang==='te'?'స్థానిక ప్రదర్శన మాత్రమే. పరికర నిల్వ ఎన్క్రిప్ట్ చేయబడలేదు; నిజమైన రోగి డేటాను ఉపయోగించవద్దు.':'Local synthetic demonstration. Device cache is not encrypted; do not use real patient information.'}</div></section></div><section class="card"><h2>${lang==='te'?'సర్వర్ ఆటోమేషన్ క్యూలో':'Server automation outbox'}</h2>${automation.events?.length?`<div class="table-wrap"><table><thead><tr><th>Event</th><th>Status</th></tr></thead><tbody>${automation.events.map(e=>`<tr><td><strong>${esc(e.type)}</strong><small>${esc(e.patientId)}</small></td><td><span class="pill ${e.deliveredAt?'':'amber'}">${e.deliveredAt?(lang==='te'?'అంగీకరించబడింది':'Accepted'):(lang==='te'?'పెండింగ్':'Queued')}</span>${e.lastError?`<small>${esc(e.lastError)}</small>`:''}</td></tr>`).join('')}</tbody></table></div>`:`<p class="sub">${t('empty')}</p>`}</section></div>`;}
-function bindCommon(){document.querySelectorAll('[data-assistant]').forEach(b=>b.onclick=openIntake);document.querySelectorAll('[data-new]').forEach(b=>b.onclick=()=>navigate('screening'));document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>navigate(b.dataset.go));document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>navigate('record',b.dataset.open));}
-function render(){document.body.dataset.role=role;shell();updateSyncDrawer();const pages={dashboard,screening,patients:registry,reviews:registry,referrals:referralsQueue,record,district,settings,team:()=>teamMarkup(lang)};$('#content').innerHTML=pages[view]()+`<footer class="footer"><span>AAROGYA DRISHTI · AAROHAN 2026</span><span>${t('demo')} · ${lang==='te'?'వైద్య వినియోగానికి కాదు':'Not for clinical use'} · v0.3</span></footer>`;bindCommon();if($('#screen-form'))bindScreen();if($('#review-form'))bindReview();if(view==='referrals')bindReferralsQueue();if($('#refresh-record'))$('#refresh-record').onclick=async()=>{try{await syncRecords();await refresh();render();}catch(error){toast(error.message);}};if($('#search')){$('#search').oninput=filterTable;$('#filter').onchange=filterTable;}if(view==='settings')bindSettings();if(view==='team')mountTeam(lang);mountAssistant({lang,scope:currentIdentity().instanceId+'-'+currentIdentity().user.id,worker:role==='worker',view,goScreening:()=>navigate('screening')});if(view==='record'){const p=patients.find(p=>p.id===selected),saved=async()=>{await refresh();render();};mountConsultations(p,lang);mountVoice(p,lang);mountResearch(p,lang,saved);mountCare(p,lang,saved);}}
-function filterTable(){const q=$('#search').value.toLowerCase(),stage=$('#filter').value;const list=patients.filter(p=>(view==='reviews'?p.stage==='screened':true)&&`${p.name} ${p.id} ${p.village}`.toLowerCase().includes(q)&&(stage==='all'||(stage==='overdue'?overdue(p):p.stage===stage)));$('#list').innerHTML=table(list);bindCommon();}
-async function readPhoto(file){if(!file)return;if(file.size>8*1024*1024||!['image/jpeg','image/png','image/webp'].includes(file.type))throw Error(lang==='te'?'8 MB లోపు JPEG, PNG లేదా WebP ఎంచుకోండి.':'Choose a JPEG, PNG or WebP under 8 MB.');const bitmap=await createImageBitmap(file);if(bitmap.width<200||bitmap.height<200){bitmap.close();throw Error(lang==='te'?'చిత్రం చాలా చిన్నది. కనీసం 200 × 200 అవసరం.':'Image too small. Minimum 200 × 200 pixels.');}const canvas=document.createElement('canvas');const scale=Math.min(1,1200/Math.max(bitmap.width,bitmap.height));canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);const ctx=canvas.getContext('2d');ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();photo=canvas.toDataURL('image/jpeg',.8);const small=document.createElement('canvas');small.width=160;small.height=160;const sctx=small.getContext('2d',{willReadFrequently:true});sctx.drawImage(canvas,0,0,160,160);quality=qualityMetrics(sctx.getImageData(0,0,160,160).data,160,160);return {photo,quality};}
+
+// -------------------------------------------------------------
+// SPECIALIST & DOCTOR INVESTIGATIONS VIEW (Biopsy / Pathology)
+// -------------------------------------------------------------
+function investigationsView(){
+  const isTe=lang==='te';
+  const list=investigationsList;
+  return intro(isTe?'బయాప్సీ & ప్రత్యేక రోగనిర్ధారణ ఆర్డర్లు':'Specialist Diagnostic Investigations & Biopsies',
+    isTe?'ఐటీడీఏ పాడేరు నెట్‌వర్క్‌లో బయాప్సీ, సైటాలజీ మరియు పాథాలజీ ల్యాబ్ ట్రాకింగ్.':'Biopsy, histopathology, and imaging workflow orders.')+
+  `<div class="stats">
+    <div class="stat"><div class="stat-top">${isTe?'మొత్తం ఆర్డర్లు':'Total Investigations'}<span class="stat-icon">🔬</span></div><strong>${String(list.length).padStart(2,'0')}</strong><small>${isTe?'ల్యాబ్ పరీక్షలు':'Diagnostic tests'}</small></div>
+    <div class="stat"><div class="stat-top">${isTe?'బయాప్సీలు':'Biopsies'}<span class="stat-icon">🩺</span></div><strong>${String(list.filter(i=>i.test_type==='biopsy').length).padStart(2,'0')}</strong><small>${isTe?'టిష్యూ సాంపిల్స్':'Tissue samples'}</small></div>
+    <div class="stat"><div class="stat-top">${isTe?'నివేదికలు అందాయి':'Reported'}<span class="stat-icon">✓</span></div><strong>${String(list.filter(i=>i.status==='completed'||i.status==='reported').length).padStart(2,'0')}</strong><small>${isTe?'పాథాలజీ పూర్తయింది':'Pathology completed'}</small></div>
+  </div>
+
+  <div class="card" style="margin-bottom:20px;padding:18px;background:rgba(240,249,255,0.7);border:1px solid #bae6fd;">
+    <h3 style="margin:0 0 12px 0;font-size:14px;color:#0369a1;">＋ ${isTe?'కొత్త బయాప్సీ / పరీక్షను ఆదేశించండి':'Order New Diagnostic Investigation'}</h3>
+    <form id="new-inv-form" style="display:grid;grid-template-columns:1.5fr 1fr 1fr auto;gap:10px;align-items:flex-end;">
+      <div class="field" style="margin:0;">
+        <label style="font-size:11px;">${isTe?'రోగిని ఎంచుకోండి':'Select Patient'} *</label>
+        <select id="inv-patient" required style="padding:8px;font-size:12px;">
+          ${patients.map(p=>`<option value="${esc(p.id)}">${esc(p.name)} (${esc(p.id)}) - ${esc(p.village)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" style="margin:0;">
+        <label style="font-size:11px;">${isTe?'పరీక్ష రకం':'Test Type'} *</label>
+        <select id="inv-type" required style="padding:8px;font-size:12px;">
+          <option value="biopsy">Biopsy (Histopathology)</option>
+          <option value="cytology">Exfoliative Cytology</option>
+          <option value="radiology_opg">Radiology (OPG X-Ray)</option>
+          <option value="routine_blood">Complete Blood Profile</option>
+        </select>
+      </div>
+      <div class="field" style="margin:0;">
+        <label style="font-size:11px;">${isTe?'ఆసుపత్రి కేంద్రం':'Target Facility'}</label>
+        <select id="inv-facility" style="padding:8px;font-size:12px;">
+          <option value="Area Hospital Paderu">Area Hospital Paderu</option>
+          <option value="Community Health Centre Araku Valley">CHC Araku Valley</option>
+          <option value="King George Hospital (KGH) Visakhapatnam">KGH Visakhapatnam (Tertiary)</option>
+        </select>
+      </div>
+      <button type="submit" class="btn primary" style="padding:9px 18px;font-size:12px;font-weight:600;">
+        ${isTe?'ఆర్డర్ సమర్పించండి':'Submit Order'}
+      </button>
+    </form>
+  </div>
+
+  <section class="card">
+    <h2>${isTe?'క్రియాశీల పరీక్షల జాబితా':'Active Investigation Ledger'}</h2>
+    ${list.length?`
+      <div style="display:grid;gap:12px;margin-top:14px;">
+        ${list.map(inv=>`
+          <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:14px;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:16px;">🔬</span>
+                <strong style="font-size:13px;text-transform:uppercase;">${esc(inv.test_type)}</strong>
+                <span class="pill ${inv.status==='completed'||inv.status==='reported'?'green':'amber'}" style="font-size:10px;">
+                  ${esc(inv.status)}
+                </span>
+              </div>
+              <p class="sub" style="margin:4px 0;">
+                ${isTe?'రోగి':'Patient'}: <strong>${esc(inv.patient_id)}</strong> · ${isTe?'కేంద్రం':'Facility'}: ${esc(inv.facility)} · ${esc(new Date(inv.ordered_at).toLocaleDateString())}
+              </p>
+              ${inv.clinical_findings?`<p style="font-size:11.5px;color:#1e3a8a;margin:4px 0;background:#eff6ff;padding:6px 10px;border-radius:6px;"><strong>Report:</strong> ${esc(inv.clinical_findings)}</p>`:''}
+            </div>
+            <div>
+              ${inv.status!=='completed'?`
+                <button class="btn" data-update-inv="${esc(inv.id)}" style="padding:6px 12px;font-size:11px;">
+                  📝 ${isTe?'పాథాలజీ రిపోర్ట్ జోడించండి':'Add Lab Report'}
+                </button>
+              `:''}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `:`<div class="empty">${isTe?'ఇంకా పరీక్ష ఆర్డర్లు లేవు.':'No investigation orders recorded yet.'}</div>`}
+  </section>`;
+}
+
+function bindInvestigations(){
+  const form=$('#new-inv-form');
+  if(form){
+    form.onsubmit=async e=>{
+      e.preventDefault();
+      try{
+        const patientId=$('#inv-patient').value;
+        const testType=$('#inv-type').value;
+        const facility=$('#inv-facility').value;
+        await createInvestigation({patientId,testType,facility,clinicalFindings:'Specialist ordered '+testType});
+        toast(lang==='te'?'రోగనిర్ధారణ పరీక్ష విజయవంతంగా ఆదేశించబడింది!':'Investigation ordered successfully!');
+        await refresh();render();
+      }catch(err){toast(err.message);}
+    };
+  }
+
+  document.querySelectorAll('[data-update-inv]').forEach(btn=>{
+    btn.onclick=async()=>{
+      const invId=btn.dataset.updateInv;
+      const findings=prompt(lang==='te'?'పాథాలజీ విశ్లేషణ ఫలితాన్ని నమోదు చేయండి:':'Enter histopathology / lab findings summary:','Histopathology confirmed: Hyperkeratosis with mild epithelial dysplasia. Benign.');
+      if(findings){
+        try{
+          await updateInvestigation(invId,{status:'completed',clinicalFindings:findings});
+          toast(lang==='te'?'నివేదిక విజయవంతంగా సేవ్ అయింది.':'Report saved successfully.');
+          await refresh();render();
+        }catch(err){toast(err.message);}
+      }
+    };
+  });
+}
+
+// -------------------------------------------------------------
+// HOSPITAL COORDINATOR & PATIENT NAVIGATION VIEW
+// -------------------------------------------------------------
+function navigationView(){
+  const isTe=lang==='te';
+  const list=navigationList;
+  return intro(isTe?'హాస్పిటల్ కోఆర్డినేషన్ & పేషెంట్ నావిగేషన్':'Patient Navigation & Hospital Care Coordination',
+    isTe?'గిరిజన రోగులను ఆసుపత్రికి చేర్చడం, రవాణా సహాయం మరియు హాజరు పర్యవేక్షణ.':'Tracking transit barriers, appointment attendance, and coordinator follow-ups.')+
+  `<div class="stats">
+    <div class="stat"><div class="stat-top">${isTe?'మొత్తం నావిగేట్ చేసినవారు':'Navigated Patients'}<span class="stat-icon">🧭</span></div><strong>${String(list.length).padStart(2,'0')}</strong><small>${isTe?'ట్రాక్ చేయబడిన రోగులు':'Assisted cases'}</small></div>
+    <div class="stat"><div class="stat-top">${isTe?'హాజరు ధృవీకరించబడింది':'Attendance Confirmed'}<span class="stat-icon">🏥</span></div><strong>${String(list.filter(n=>n.attendance_confirmed).length).padStart(2,'0')}</strong><small>${isTe?'ఆసుపత్రికి వచ్చారు':'Reached facility'}</small></div>
+  </div>
+
+  <div class="card" style="margin-bottom:20px;padding:18px;background:rgba(240,253,244,0.7);border:1px solid #bbf7d0;">
+    <h3 style="margin:0 0 12px 0;font-size:14px;color:#166534;">＋ ${isTe?'రోగి సంప్రదింపు మరియు రవాణా సహాయాన్ని నమోదు చేయండి':'Log Patient Assistance / Navigation Event'}</h3>
+    <form id="new-nav-form" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:flex-end;">
+      <div class="field" style="margin:0;">
+        <label style="font-size:11px;">${isTe?'రోగి':'Patient'} *</label>
+        <select id="nav-patient" required style="padding:8px;font-size:12px;">
+          ${patients.map(p=>`<option value="${esc(p.id)}">${esc(p.name)} (${esc(p.id)}) - ${esc(p.village)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" style="margin:0;">
+        <label style="font-size:11px;">${isTe?'సంప్రదింపు స్థితి':'Contact Status'} *</label>
+        <select id="nav-contact" style="padding:8px;font-size:12px;">
+          <option value="contacted">Contacted & Confirmed</option>
+          <option value="visit_scheduled">Visit Scheduled</option>
+          <option value="unreachable">Unreachable</option>
+        </select>
+      </div>
+      <div class="field" style="margin:0;">
+        <label style="font-size:11px;">${isTe?'రవాణా సదుపాయం':'Transport Barrier / Support'}</label>
+        <select id="nav-barrier" style="padding:8px;font-size:12px;">
+          <option value="ITDA Tribal Bus Voucher Provided">ITDA Tribal Bus Voucher Provided</option>
+          <option value="Ambulance / 104 Vehicle Assigned">Mobile Van / 104 Transport Assigned</option>
+          <option value="Escort Health Worker Assigned">Escort ASHA Worker Assigned</option>
+          <option value="None">None (Independent Travel)</option>
+        </select>
+      </div>
+      <button type="submit" class="btn primary" style="padding:9px 18px;font-size:12px;font-weight:600;">
+        ${isTe?'సేవ్ చేయండి':'Save Log'}
+      </button>
+    </form>
+  </div>
+
+  <section class="card">
+    <h2>${isTe?'ఇటీవలి నావిగేషన్ రికార్డులు':'Recent Navigation Logs'}</h2>
+    ${list.length?`
+      <div style="display:grid;gap:12px;margin-top:14px;">
+        ${list.map(nav=>`
+          <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:14px;display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:16px;">📍</span>
+                <strong style="font-size:13px;">${esc(nav.patient?.name||nav.patient_id)}</strong>
+                <span class="pill green" style="font-size:10px;">${esc(nav.contact_status)}</span>
+              </div>
+              <small style="color:#64748b;display:block;margin-top:3px;">
+                ${isTe?'రవాణా':'Transit'}: ${esc(nav.barrier_identified||'None')} · ${isTe?'కోఆర్డినేటర్':'Coordinator'}: ${esc(nav.navigator_name||'Staff')} · ${esc(new Date(nav.updated_at).toLocaleDateString())}
+              </small>
+            </div>
+            <button class="table-action" data-open="${esc(nav.patient_id)}">${t('open')} ↗</button>
+          </div>
+        `).join('')}
+      </div>
+    `:`<div class="empty">${isTe?'ఇంకా నావిగేషన్ రికార్డులు లేవు.':'No navigation tracking records logged yet.'}</div>`}
+  </section>`;
+}
+
+function bindNavigation(){
+  const form=$('#new-nav-form');
+  if(form){
+    form.onsubmit=async e=>{
+      e.preventDefault();
+      try{
+        const patientId=$('#nav-patient').value;
+        const contactStatus=$('#nav-contact').value;
+        const barrierIdentified=$('#nav-barrier').value;
+        await createNavigation({patientId,contactStatus,barrierIdentified,attendanceConfirmed:true,notes:'Hospital coordinator logged support.'});
+        toast(lang==='te'?'నావిగేషన్ సహాయం విజయవంతంగా సేవ్ అయింది!':'Navigation event logged successfully!');
+        await refresh();render();
+      }catch(err){toast(err.message);}
+    };
+  }
+}
+
+// -------------------------------------------------------------
+// PATIENT PERSONAL PORTAL VIEW
+// -------------------------------------------------------------
+function patientPortalView(){
+  const isTe=lang==='te';
+  const p=patients[0]; // Patient role accesses their own personal record
+  if(!p){
+    return `
+    <div class="card" style="text-align:center;padding:40px;">
+      <h2>${isTe?'రోగి రికార్డు సిద్ధంగా లేదు':'No Patient Record Found'}</h2>
+      <p class="sub">${isTe?'డెమో కోసం దయచేసి ప్రాథమిక రికార్డును జోడించండి.':'Click below to seed an example patient screening record for this demonstration.'}</p>
+      <button class="btn primary" id="btn-seed-patient" style="margin-top:14px;">＋ ${isTe?'డెమో రోగి రికార్డు సృష్టించండి':'Create Demo Patient Record'}</button>
+    </div>`;
+  }
+
+  return `
+  <div class="upload-view-container">
+    <div class="card" style="background:linear-gradient(135deg,#064e3b 0%,#043329 100%);color:#ffffff;border-radius:18px;padding:26px;margin-bottom:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+        <div>
+          <span class="pill" style="background:rgba(255,255,255,0.15);color:#a7f3d0;border:none;">${isTe?'వ్యక్తిగత ఆరోగ్య రికార్డు':'PATIENT HEALTH RECORD'}</span>
+          <h1 style="color:#ffffff;font-size:26px;margin:10px 0 4px;">${esc(p.name)}</h1>
+          <p style="color:#a7f3d0;font-size:13px;margin:0;">
+            ${isTe?'ఐడీ':'Patient ID'}: <strong>${esc(p.id)}</strong> · ${p.age} ${isTe?'సంవత్సరాలు':'years'} · ${esc(p.village)}
+          </p>
+        </div>
+        <div style="text-align:right;">
+          <span class="pill green" style="font-size:12px;padding:6px 14px;">${st(p.stage)}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="columns">
+      <div>
+        <!-- Screening Photo & Quality -->
+        <section class="card">
+          <h2>📷 ${isTe?'మీ నోటి స్క్రీనింగ్ ఫోటో':'Your Oral Cavity Photograph'}</h2>
+          <div style="margin:16px 0;text-align:center;">
+            ${p.photo?`<img class="preview" src="${esc(p.photo)}" style="max-height:240px;border-radius:12px;" alt="Oral photograph">`:`<div class="empty">${isTe?'ఫోటో అప్‌లోడ్ కాలేదు':'Photograph pending'}</div>`}
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <span class="pill ${p.quality?.pass?'green':'amber'}">
+              ${p.quality?.pass?(isTe?'చిత్ర నాణ్యత: మంచి (స్పష్టంగా ఉంది)':'Image Quality: Verified Good'):(isTe?'నాణ్యత తనిఖీ పూర్తయింది':'Quality Checked')}
+            </span>
+            <small style="color:#64748b;">ASHA Frontline Screening</small>
+          </div>
+        </section>
+
+        <!-- Doctor's Clinical Advice -->
+        <section class="card">
+          <h2>🩺 ${isTe?'వైద్యుని సలహా & పరిశీలనలు':'Doctor’s Clinical Impression & Advice'}</h2>
+          <div style="padding:14px;background:#f8fafc;border-radius:12px;margin:12px 0;">
+            <p style="margin:0 0 6px 0;font-size:13px;"><strong>${isTe?'ప్రాథమిక పరిశీలన':'Provisional Impression'}:</strong> ${esc(p.provisionalDiagnosis||'Under Review')}</p>
+            <p style="margin:0 0 6px 0;font-size:13px;"><strong>${isTe?'వైద్యుని గమనికలు':'Doctor’s Notes'}:</strong> ${esc(p.notes||'Routine examination advised. Avoid tobacco and gutka consumption.')}</p>
+            <p style="margin:0;font-size:12px;color:#059669;"><strong>${isTe?'ఆసుపత్రి కేంద్రం':'Destination Hospital'}:</strong> ${esc(p.facility||'Area Hospital Paderu')}</p>
+          </div>
+        </section>
+      </div>
+
+      <div>
+        <!-- Video Teleconsultation Direct Join -->
+        <section class="card" style="border:1.5px solid #93c5fd;background:rgba(239,246,255,0.4);">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+            <span style="font-size:24px;">📹</span>
+            <div>
+              <h3 style="margin:0;font-size:15px;color:#1e3a8a;">${isTe?'వీడియో సంప్రదింపు':'Live Video Consultation'}</h3>
+              <small style="color:#3b82f6;">${isTe?'డాక్టర్ లేదా స్పెషలిస్ట్‌తో నేరుగా మాట్లాడండి':'Direct WebRTC Call with Doctor'}</small>
+            </div>
+          </div>
+          <p style="font-size:12px;color:#475569;line-height:1.6;">
+            ${isTe?'మీరు గ్రామంలో ఉన్నా సరే, పాడేరు ఏరియా ఆసుపత్రి దంత నిపుణులతో నేరుగా వీడియో కాల్‌లో మాట్లాడవచ్చు.'
+              :'Connect directly with our dental surgeon via live video call right from your phone or health center.'}
+          </p>
+          <button class="btn primary" id="btn-patient-join-video" style="width:100%;padding:12px;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;">
+            <span>🟢</span> ${isTe?'వీడియో కాల్ ప్రారంభించండి / చేరండి':'Join Video Teleconsultation'}
+          </button>
+        </section>
+
+        <!-- Golden 14-day rule -->
+        <section class="card" style="border:1.5px solid #fecaca;background:#fff5f5;">
+          <h4 style="color:#b91c1c;margin:0 0 8px 0;font-size:14px;">⚠️ ${isTe?'ముఖ్యమైన ఆరోగ్య సూత్రం (14 రోజుల నియమం)':'Critical Golden Window (14-Day Rule)'}</h4>
+          <p style="font-size:12px;color:#7f1d1d;line-height:1.6;margin:0;">
+            ${isTe?'నోటిలో 14 రోజులకు మించి పుండు మానకపోతే వెంటనే మీ ఆశా కార్యకర్తను లేదా సమీప పీహెచ్‌సీని సంప్రదించండి.'
+              :'If any oral ulcer or white/red patch persists beyond 14 days without healing, visit Area Hospital Paderu for evaluation.'}
+          </p>
+        </section>
+      </div>
+    </div>
+  </div>`;
+}
+
+function bindPatientPortal(){
+  const btnSeed=$('#btn-seed-patient');
+  if(btnSeed){
+    btnSeed.onclick=async()=>{
+      await seed();
+      await refresh();
+      render();
+    };
+  }
+
+  const btnVideo=$('#btn-patient-join-video');
+  if(btnVideo){
+    btnVideo.onclick=async()=>{
+      const p=patients[0];
+      if(!p) return;
+      navigate('record', p.id);
+      setTimeout(()=>{
+        const callBtn=document.querySelector('[data-start-call]');
+        if(callBtn) callBtn.click();
+        else toast(lang==='te'?'వీడియో రూమ్ లోడ్ అవుతోంది...':'Connecting to consultation room...');
+      }, 300);
+    };
+  }
+}
+
+// -------------------------------------------------------------
+// FACILITIES NETWORK PORTAL VIEW
+// -------------------------------------------------------------
+function facilitiesPortalView(){
+  const isTe=lang==='te';
+  return intro(isTe?'ఐటీడీఏ పాడేరు ఆసుపత్రుల నెట్‌వర్క్':'ITDA Paderu Healthcare Facility Network',
+    isTe?'అల్లూరి సీతారామరాజు జిల్లాలోని 6 అనుసంధానించబడిన కేంద్రాలు.':'Integrated secondary and tertiary referral network.')+
+  `<div class="facilities-grid">
+    ${ITDA_FACILITIES.map(f=>`
+      <div class="facility-card">
+        <div class="facility-header">
+          <div>
+            <h4>${isTe&&f.nameTe?f.nameTe:f.name}</h4>
+            <span class="facility-village">📍 ${isTe&&f.villageTe?f.villageTe:f.village}</span>
+          </div>
+          <span class="pill ${f.hasBiopsyFacility?'green':'amber'}">
+            ${f.hasBiopsyFacility?(isTe?'బయాప్సీ కేంద్రం':'Biopsy Unit'):(isTe?'ప్రాథమిక కేంద్రం':'Primary Care')}
+          </span>
+        </div>
+        <p class="facility-level">${isTe&&f.levelTe?f.levelTe:f.level}</p>
+        <div class="facility-meta">
+          <span>🩺 ${f.hasDentalSurgeon?(isTe?'దంత వైద్యుడు కలరు':'Dental Surgeon On-Duty'):(isTe?'విజిటింగ్ డెంటిస్ట్':'Visiting Clinician')}</span>
+          <span>📞 ${esc(f.phone||'08935-252233')}</span>
+        </div>
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+function record(){
+  const p=patients.find(p=>p.id===selected);
+  if(!p)return intro(t('empty'));
+  const canReview=['doctor','specialist'].includes(role)&&Boolean(p.version)&&navigator.onLine;
+  return `<button class="btn" data-go="patients">← ${t('back')}</button>
+  <div style="height:22px"></div>
+  <div class="record-top">
+    <div class="avatar">${esc(p.name.slice(0,1))}</div>
+    <div>
+      <h1>${esc(p.name)}</h1>
+      <p class="sub">${esc(p.id)} · ${p.age} ${lang==='te'?'సంవత్సరాలు':'years'} · ${esc(p.village)}</p>
+    </div>
+    <span class="pill" style="margin-left:auto">${st(p.stage)}</span>
+  </div>
+  <p class="mini">${p._sync==='pending'?(lang==='te'?'పరికరంలో మాత్రమే · అప్‌లోడ్ పెండింగ్':'On this device only · upload pending'):(lang==='te'?'భాగస్వామ్య రికార్డు':'Shared patient record')} · ${lang==='te'?'వెర్షన్':'Version'} ${p.version||'—'}</p>
+  <button class="btn" id="refresh-record">↻ ${lang==='te'?'భాగస్వామ్య రికార్డు రిఫ్రెష్':'Refresh shared record'}</button>
+  <div class="flow">${Object.keys(stages).map((k,i)=>`<div class="${i<=Object.keys(stages).indexOf(p.stage)?'done':''}"><b>${i+1}</b>${st(k)}</div>`).join('')}</div>
+  <div class="columns">
+    <div>
+      <section class="card">
+        <h2>${t('photo')}</h2>
+        <div style="margin:18px 0">
+          ${p.photo?`<img class="preview" src="${esc(p.photo)}" alt="Submitted oral photograph">`:`<div class="empty">${lang==='te'?'ఫోటో ఇంకా జోడించలేదు':'Photo pending — no image assessment available'}</div>`}
+        </div>
+        <span class="pill ${p.quality?.pass?'':'amber'}">
+          ${p.photo?(p.quality?.pass?(lang==='te'?'ప్రాథమిక నాణ్యత పరీక్ష ఉత్తీర్ణం':'Basic image-quality check passed'):(lang==='te'?'మెరుగైన ఫోటో అవసరం':'Retake recommended')):(lang==='te'?'ఫోటో పెండింగ్':'Photo pending')}
+        </span>
+        <p class="mini">${lang==='te'?'ఈ పరీక్ష కేవలం వెలుతురు, కాంట్రాస్ట్, వివరాలను కొలుస్తుంది.':'Checks measure lighting, contrast and pixel detail only. They do not validate image anatomy.'}</p>
+      </section>
+      ${researchMarkup(p,lang)}
+      <section class="card">
+        <h2>${t('history')}</h2>
+        <p>${esc(p.history||'—')}</p>
+        <p class="mini">${lang==='te'?'పరికర నిల్వ అనుమతి నమోదు అయింది':'Device-storage consent recorded'} · ${esc(p.createdAt?.slice(0,10)||'')}</p>
+      </section>
+    </div>
+    <div>
+      <section class="card">
+        <h2>${t('review')}</h2>
+        <p class="mini">${lang==='te'?'వైద్యుని ఖాతాకు మాత్రమే సమీక్ష అనుమతి. భాగస్వామ్య సర్వర్ కనెక్షన్ అవసరం.':'Only a signed-in doctor can review. A shared-server connection is required.'}</p>
+        ${!canReview?`<div class="notice">${lang==='te'?'వైద్యునిగా లాగిన్ అయి సర్వర్‌కు కనెక్ట్ అవ్వండి. ముందుగా స్క్రీనింగ్‌ను అప్‌లోడ్ చేయండి.':'Sign in with a doctor account and connect to the server. The screening must be uploaded first.'}</div>`:''}
+        <form id="review-form">
+          <div class="field">
+            <label for="quadrant">${lang==='te'?'నోటి భాగం / క్వాడ్రంట్':'Oral Quadrant / Region'}</label>
+            <select id="quadrant" name="quadrant" ${!canReview?'disabled':''}>
+              <option value="GENERAL" ${p.quadrant==='GENERAL'?'selected':''}>${lang==='te'?'సాధారణ నోటి పరీక్ష':'General Oral Cavity'}</option>
+              <option value="Q1_UR" ${p.quadrant==='Q1_UR'?'selected':''}>${lang==='te'?'ఎగువ కుడి (Q1, దంతాలు 11-18)':'Upper Right (Q1 Maxillary, 11-18)'}</option>
+              <option value="Q2_UL" ${p.quadrant==='Q2_UL'?'selected':''}>${lang==='te'?'ఎగువ ఎడమ (Q2, దంతాలు 21-28)':'Upper Left (Q2 Maxillary, 21-28)'}</option>
+              <option value="Q3_LL" ${p.quadrant==='Q3_LL'?'selected':''}>${lang==='te'?'దిగువ ఎడమ (Q3, దంతాలు 31-38)':'Lower Left (Q3 Mandibular, 31-38)'}</option>
+              <option value="Q4_LR" ${p.quadrant==='Q4_LR'?'selected':''}>${lang==='te'?'దిగువ కుడి (Q4, దంతాలు 41-48)':'Lower Right (Q4 Mandibular, 41-48)'}</option>
+              <option value="MUCOSA" ${p.quadrant==='MUCOSA'?'selected':''}>${lang==='te'?'నోటి శ్లేష్మం / నాలుక / పెదవి':'Oral Mucosa / Tongue / Lip'}</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="provisionalDiagnosis">${lang==='te'?'ప్రాథమిక రోగ నిర్ధారణ':'Provisional Clinical Impression'}</label>
+            <input id="provisionalDiagnosis" name="provisionalDiagnosis" maxlength="200" value="${esc(p.provisionalDiagnosis||'')}" placeholder="${lang==='te'?'ఉదా. ల్యూకోప్లాకియా అనుమానం, కేరీస్ Q1':'e.g. Suspected leukoplakia, Dental caries Q1'}" ${!canReview?'disabled':''}>
+          </div>
+          <div class="field">
+            <label for="notes">${t('notes')} *</label>
+            <textarea id="notes" name="notes" required maxlength="4000" ${!canReview?'disabled':''}>${esc(p.notes||'')}</textarea>
+          </div>
+          <div class="field">
+            <label for="stage">${t('stage')}</label>
+            <select id="stage" name="stage" ${!canReview?'disabled':''}>
+              ${Object.keys(stages).filter(k=>k!=='screened').map(k=>`<option value="${k}" ${k===p.stage?'selected':''}>${st(k)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label for="facility">${t('facility')}</label>
+            <input id="facility" name="facility" maxlength="150" value="${esc(p.facility||'')}" list="facilities-list" ${!canReview?'disabled':''}>
+            <datalist id="facilities-list">
+              <option>Area Hospital Paderu</option>
+              <option>Community Health Centre Araku</option>
+              <option>CHC Chintapalle</option>
+              <option>Primary Health Centre Hukumpeta</option>
+              <option>ITDA Mobile Dental Screening Unit</option>
+              <option>King George Hospital Visakhapatnam (Tertiary)</option>
+            </datalist>
+          </div>
+          <div class="field">
+            <label for="priority">${lang==='te'?'రెఫరల్ ప్రాధాన్యత':'Referral Priority'}</label>
+            <select id="priority" name="priority" ${!canReview?'disabled':''}>
+              <option value="routine" ${p.priority==='routine'?'selected':''}>${lang==='te'?'సాధారణ (Routine)':'Routine'}</option>
+              <option value="urgent" ${p.priority==='urgent'?'selected':''}>${lang==='te'?'అత్యవసరం (Urgent - 1-2 days)':'Urgent (1-2 days)'}</option>
+              <option value="emergency" ${p.priority==='emergency'?'selected':''}>${lang==='te'?'తక్షణ అత్యవసరం (Emergency)':'Emergency (Immediate)'}</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="due">${t('due')}</label>
+            <input id="due" name="due" type="date" value="${esc(p.due||'')}" ${!canReview?'disabled':''}>
+          </div>
+          <div class="actions">
+            <button class="btn primary" ${!canReview?'disabled':''}>${lang==='te'?'సమీక్ష సేవ్ చేయండి':'Save review & next step'}</button>
+          </div>
+        </form>
+      </section>
+      <section class="card">
+        <h2>${lang==='te'?'సంరక్షణ చరిత్ర':'Care timeline'}</h2>
+        <div class="timeline">
+          ${[...(p.timeline||[])].reverse().map(e=>`<p>${esc(lang==='te'?e.te:e.text)}<small>${new Date(e.at).toLocaleString(lang==='te'?'te-IN':'en-IN')}</small></p>`).join('')}
+        </div>
+      </section>
+    </div>
+  </div>
+  ${careMarkup(p,lang)}
+  ${voiceMarkup(p,lang)}
+  ${consultationMarkup(lang)}`;
+}
+
+// -------------------------------------------------------------
+// DISTRICT INSIGHTS & REAL-TIME DASHBOARD (SQLite Live Stats)
+// -------------------------------------------------------------
+function district(){
+  const isTe=lang==='te';
+  const st = dashboardStats || {
+    totalPatients: patients.length,
+    totalScreenings: patients.filter(p=>p.photo).length,
+    pendingReviews: patients.filter(p=>p.stage==='screened').length,
+    completedReviews: patients.filter(p=>p.stage!=='screened').length,
+    totalReferrals: referralsList.length,
+    totalInvestigations: investigationsList.length,
+    totalConsultations: 2,
+    suspiciousFindings: 1,
+    villageBreakdown: [
+      { village: 'Paderu', count: 5 },
+      { village: 'Araku Valley', count: 4 },
+      { village: 'Hukumpeta', count: 3 },
+      { village: 'Chintapalle', count: 2 }
+    ]
+  };
+
+  return intro(t('district'),isTe?'ఐటీడీఏ పాడేరు ప్రత్యక్ష డేటాబేస్ విశ్లేషణ మరియు నివేదికలు.':'Live SQLite database aggregation across all agency mandals.')+
+  `<div class="stats">
+    <div class="stat"><div class="stat-top">${isTe?'మొత్తం రోగులు':'Total Patients'}<span class="stat-icon">👥</span></div><strong>${String(st.totalPatients).padStart(2,'0')}</strong><small>${isTe?'రిజిస్టర్ అయినవారు':'Registered'}</small></div>
+    <div class="stat"><div class="stat-top">${isTe?'నోటి స్క్రీనింగ్‌లు':'Oral Screenings'}<span class="stat-icon">📷</span></div><strong>${String(st.totalScreenings).padStart(2,'0')}</strong><small>${isTe?'ఫోటో రికార్డులు':'Photo captures'}</small></div>
+    <div class="stat"><div class="stat-top">${isTe?'సమీక్ష పెండింగ్':'Pending Reviews'}<span class="stat-icon">⏳</span></div><strong style="color:#d97706;">${String(st.pendingReviews).padStart(2,'0')}</strong><small>${isTe?'వైద్యుని కోసం వేచి':'Doctor queue'}</small></div>
+    <div class="stat"><div class="stat-top">${isTe?'మొత్తం రెఫరల్స్':'Referrals'}<span class="stat-icon">↗</span></div><strong>${String(st.totalReferrals).padStart(2,'0')}</strong><small>${isTe?'ఆసుపత్రి బదిలీలు':'Facility cases'}</small></div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-top">${isTe?'బయాప్సీ & ల్యాబ్ పరీక్షలు':'Investigations'}<span class="stat-icon">🔬</span></div><strong>${String(st.totalInvestigations).padStart(2,'0')}</strong><small>${isTe?'ల్యాబ్ ఆర్డర్లు':'Biopsy orders'}</small></div>
+    <div class="stat"><div class="stat-top">${isTe?'టెలికన్సల్టేషన్లు':'Teleconsultations'}<span class="stat-icon">📹</span></div><strong>${String(st.totalConsultations).padStart(2,'0')}</strong><small>${isTe?'వీడియో కాల్స్':'WebRTC calls'}</small></div>
+    <div class="stat"><div class="stat-top">${isTe?'అనుమానిత ఫలితాలు':'Suspicious Cases'}<span class="stat-icon">⚠</span></div><strong style="color:#dc2626;">${String(st.suspiciousFindings).padStart(2,'0')}</strong><small>${isTe?'OSMF / ల్యూకోప్లాకియా':'Early triage alerts'}</small></div>
+    <div class="stat"><div class="stat-top">${isTe?'పూర్తయిన సమీక్షలు':'Completed Reviews'}<span class="stat-icon">✓</span></div><strong>${String(st.completedReviews).padStart(2,'0')}</strong><small>${isTe?'డాక్టర్ ఆమోదం':'Signed decisions'}</small></div>
+  </div>
+
+  <div class="columns">
+    <section class="card">
+      <div class="card-head">
+        <h2>${isTe?'గ్రామాల వారీగా రోగుల పంపిణీ':'Coverage by Agency Village'}</h2>
+        <button class="btn" id="btn-refresh-stats" style="font-size:11px;padding:4px 8px;">↻ Refresh</button>
+      </div>
+      <div style="margin-top:10px;">
+        ${(st.villageBreakdown||[]).map(v=>`
+          <div class="bar-row">
+            <span>${esc(v.village||'Unknown')}</span>
+            <div class="bar"><i style="width:${Math.min(100, (v.count / Math.max(1, st.totalPatients)) * 100)}%"></i></div>
+            <b>${v.count}</b>
+          </div>
+        `).join('')}
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>${isTe?'సంరక్షణ దశల పంపిణీ':'Care Pipeline Progression'}</h2>
+      ${Object.keys(stages).map(k=>{
+        const n=patients.filter(p=>p.stage===k).length;
+        return `<div class="bar-row">
+          <span>${st(k)}</span>
+          <div class="bar"><i style="width:${(n/Math.max(1,patients.length))*100}%"></i></div>
+          <b>${n}</b>
+        </div>`;
+      }).join('')}
+    </section>
+  </div>`;
+}
+
+function bindDistrict(){
+  const btnRefresh=$('#btn-refresh-stats');
+  if(btnRefresh){
+    btnRefresh.onclick=async()=>{
+      try{
+        const res=await fetchDashboardStats();
+        dashboardStats=res.stats;
+        render();
+        toast(lang==='te'?'జిల్లా గణాంకాలు రిఫ్రెష్ అయ్యాయి.':'Dashboard stats refreshed from database.');
+      }catch(err){toast(err.message);}
+    };
+  }
+}
+
+function settings(){
+  return intro(t('settings'),lang==='te'?'భాగస్వామ్య రికార్డులు, ఆఫ్‌లైన్ అప్‌లోడ్‌లు మరియు n8n.':'Shared records, offline uploads and local n8n automation.')+
+  `<div class="columns">
+    <div>
+      <section class="card">
+        <h2>${lang==='te'?'భాగస్వామ్య రోగి డేటాబేస్':'Shared patient database'}</h2>
+        <p>${lang==='te'?'ఆరోగ్య కార్యకర్త మరియు వైద్యుడు ఒకే సర్వర్ డేటాబేస్‌ను ఉపయోగిస్తారు. ఆఫ్‌లైన్ స్క్రీనింగ్‌లు ఈ ఖాతా పరికర నిల్వలో వేచి ఉంటాయి.':'Workers and doctors use the same server database. Offline screenings wait in this account’s device cache until uploaded.'}</p>
+        <div class="flow">
+          <div class="done"><b>${patients.filter(p=>p._sync==='shared').length}</b>${lang==='te'?'భాగస్వామ్య రికార్డులు':'Shared records'}</div>
+          <div><b>${events.length}</b>${lang==='te'?'అప్‌లోడ్ పెండింగ్':'Device uploads pending'}</div>
+        </div>
+        <button class="btn primary" id="sync">↻ ${lang==='te'?'రికార్డులు & n8n సింక్':'Sync records & n8n'}</button>
+      </section>
+      <section class="card">
+        <h2>${lang==='te'?'పరికర బ్యాకప్':'Device backup'}</h2>
+        <div class="actions">
+          <button class="btn" id="export">↓ ${lang==='te'?'బ్యాకప్ ఎగుమతి':'Export backup'}</button>
+          ${['worker','asha'].includes(role)?`
+            <button class="btn" id="seed">${lang==='te'?'కల్పిత ఉదాహరణలు':'Add synthetic examples'}</button>
+          `:''}
+        </div>
+      </section>
+    </div>
+    <div>
+      <section class="card">
+        <h2>n8n Workflow Automation</h2>
+        <div class="flow">
+          <div><b>${automation.pending||0}</b>Pending</div>
+          <div class="done"><b>${automation.receipts||0}</b>Receipts</div>
+        </div>
+      </section>
+    </div>
+  </div>`;
+}
+
+function bindCommon(){
+  document.querySelectorAll('[data-assistant]').forEach(b=>b.onclick=openIntake);
+  document.querySelectorAll('[data-new]').forEach(b=>b.onclick=()=>navigate('screening'));
+  document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>navigate(b.dataset.go));
+  document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>navigate('record',b.dataset.open));
+}
+
+function render(){
+  document.body.dataset.role=role;
+  shell();
+  updateSyncDrawer();
+
+  const pages={
+    dashboard,
+    screening,
+    patients:registry,
+    reviews:registry,
+    referrals:referralsQueue,
+    record,
+    district,
+    settings,
+    team:()=>teamMarkup(lang),
+    investigations:investigationsView,
+    navigation:navigationView,
+    patient_portal:patientPortalView,
+    facilities_portal:facilitiesPortalView
+  };
+
+  const pageFn = pages[view] || dashboard;
+  $('#content').innerHTML=pageFn()+`
+    <footer class="footer">
+      <span>AAROGYA DRISHTI · AAROHAN 2026</span>
+      <span>${t('demo')} · ${lang==='te'?'వైద్య వినియోగానికి కాదు':'Not for clinical use'} · v0.4</span>
+    </footer>`;
+
+  bindCommon();
+  if($('#screen-form'))bindScreen();
+  if($('#review-form'))bindReview();
+  if(view==='referrals')bindReferralsQueue();
+  if(view==='investigations')bindInvestigations();
+  if(view==='navigation')bindNavigation();
+  if(view==='patient_portal')bindPatientPortal();
+  if(view==='district')bindDistrict();
+
+  if($('#refresh-record'))$('#refresh-record').onclick=async()=>{
+    try{await syncRecords();await refresh();render();}catch(error){toast(error.message);}
+  };
+  if($('#search')){
+    $('#search').oninput=filterTable;
+    $('#filter').onchange=filterTable;
+  }
+  if(view==='settings')bindSettings();
+  if(view==='team')mountTeam(lang);
+
+  mountAssistant({
+    lang,
+    scope:currentIdentity().instanceId+'-'+currentIdentity().user.id,
+    worker:['worker','asha'].includes(role),
+    view,
+    goScreening:()=>navigate('screening')
+  });
+
+  if(view==='record'){
+    const p=patients.find(p=>p.id===selected);
+    const saved=async()=>{await refresh();render();};
+    mountConsultations(p,lang);
+    mountVoice(p,lang);
+    mountResearch(p,lang,saved);
+    mountCare(p,lang,saved);
+  }
+}
+
+function filterTable(){
+  const q=$('#search').value.toLowerCase(),stage=$('#filter').value;
+  const list=patients.filter(p=>(view==='reviews'?p.stage==='screened':true)&&`${p.name} ${p.id} ${p.village}`.toLowerCase().includes(q)&&(stage==='all'||(stage==='overdue'?overdue(p):p.stage===stage)));
+  $('#list').innerHTML=table(list);
+  bindCommon();
+}
+
+async function readPhoto(file){
+  if(!file)return;
+  if(file.size>8*1024*1024||!['image/jpeg','image/png','image/webp'].includes(file.type))throw Error(lang==='te'?'8 MB లోపు JPEG, PNG లేదా WebP ఎంచుకోండి.':'Choose a JPEG, PNG or WebP under 8 MB.');
+  const bitmap=await createImageBitmap(file);
+  if(bitmap.width<200||bitmap.height<200){bitmap.close();throw Error(lang==='te'?'చిత్రం చాలా చిన్నది. కనీసం 200 × 200 అవసరం.':'Image too small. Minimum 200 × 200 pixels.');}
+  const canvas=document.createElement('canvas');
+  const scale=Math.min(1,1200/Math.max(bitmap.width,bitmap.height));
+  canvas.width=Math.round(bitmap.width*scale);
+  canvas.height=Math.round(bitmap.height*scale);
+  const ctx=canvas.getContext('2d');
+  ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
+  bitmap.close();
+  photo=canvas.toDataURL('image/jpeg',.8);
+  const small=document.createElement('canvas');
+  small.width=160;small.height=160;
+  const sctx=small.getContext('2d',{willReadFrequently:true});
+  sctx.drawImage(canvas,0,0,160,160);
+  quality=qualityMetrics(sctx.getImageData(0,0,160,160).data,160,160);
+  return {photo,quality};
+}
+
 function bindScreen(){
   const fileInput = $('#photo');
   const cameraInput = $('#photo-camera');
@@ -758,25 +1624,220 @@ function bindScreen(){
     }
   };
 }
-function bindReview(){const reviewSnapshot=structuredClone(patients.find(p=>p.id===selected));$('#review-form').onsubmit=async e=>{e.preventDefault();if(role!=='doctor'||!navigator.onLine)return toast('Clinical reviews require a server connection.');const form=new FormData(e.target),p=structuredClone(reviewSnapshot);const next=form.get('stage'),facility=form.get('facility').trim(),due=form.get('due');if(['referred','diagnostics','treatment'].includes(next)&&(!facility||!due))return toast(lang==='te'?'ఆసుపత్రి మరియు తదుపరి తేదీ అవసరం.':'Facility and next appointment date are required for ongoing referrals.');p.stage=next;p.notes=form.get('notes').trim();p.facility=facility;p.due=next==='closed'?'':due;p.quadrant=form.get('quadrant')||'GENERAL';p.provisionalDiagnosis=form.get('provisionalDiagnosis')?.trim()||'';p.priority=form.get('priority')||'routine';try{await persist(p,next==='referred'?'referral.created':'review.completed');render();toast(lang==='te'?'సమీక్ష మరియు రెఫరల్ సేవ్ అయ్యాయి.':'Review and referral saved.');}catch(error){toast(error.message);}};}
+
+function bindReview(){
+  const reviewSnapshot=structuredClone(patients.find(p=>p.id===selected));
+  $('#review-form').onsubmit=async e=>{
+    e.preventDefault();
+    if(!['doctor','specialist'].includes(role)||!navigator.onLine) return toast('Clinical reviews require a server connection.');
+    const form=new FormData(e.target),p=structuredClone(reviewSnapshot);
+    const next=form.get('stage'),facility=form.get('facility').trim(),due=form.get('due');
+    if(['referred','diagnostics','treatment'].includes(next)&&(!facility||!due)){
+      return toast(lang==='te'?'ఆసుపత్రి మరియు తదుపరి తేదీ అవసరం.':'Facility and next appointment date are required for ongoing referrals.');
+    }
+    p.stage=next;
+    p.notes=form.get('notes').trim();
+    p.facility=facility;
+    p.due=next==='closed'?'':due;
+    p.quadrant=form.get('quadrant')||'GENERAL';
+    p.provisionalDiagnosis=form.get('provisionalDiagnosis')?.trim()||'';
+    p.priority=form.get('priority')||'routine';
+    try{
+      await persist(p,next==='referred'?'referral.created':'review.completed');
+      render();
+      toast(lang==='te'?'సమీక్ష మరియు రెఫరల్ సేవ్ అయ్యాయి.':'Review and referral saved.');
+    }catch(error){toast(error.message);}
+  };
+}
+
 let syncing=false;
-async function sync(){if(syncing)return;syncing=true;try{const result=await syncRecords();await refresh();try{await api('/api/automation/sync',{method:'POST',data:{}});}catch(error){toast(error.message);}automation=await api('/api/automation/status');render();toast(lang==='te'?`${result.uploaded||0} రికార్డులు అప్‌లోడ్ అయ్యాయి; ${automation.pending} n8n పెండింగ్.`:`${result.uploaded||0} records uploaded; ${automation.pending} n8n events pending.`);}catch(error){toast(error.message);}finally{syncing=false;}}
-async function importScreenings(rows){
- if(!Array.isArray(rows)||rows.length>1000)throw Error('Invalid backup.');
- for(const p of rows)if(typeof p.id!=='string'||!/^AD-[A-Za-z0-9-]+$/.test(p.id)||typeof p.name!=='string'||!p.name.trim()||p.name.length>100||typeof p.village!=='string'||!p.village.trim()||p.village.length>100||!Number.isInteger(p.age)||p.age<1||p.age>120||p.consent!==true||(p.photo&&(typeof p.photo!=='string'||p.photo.length>2800000||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(p.photo))))throw Error('Invalid screening or missing consent in backup.');
- let added=0;for(const p of rows)if(!patients.some(existing=>existing.id===p.id)){await createScreening({id:p.id,name:p.name,age:p.age,village:p.village,phone:String(p.phone||'').slice(0,20),history:String(p.history||'').slice(0,2000),photo:p.photo||null,quality:p.quality,consent:true,stage:'screened',notes:'',facility:'',due:'',createdAt:new Date().toISOString(),timeline:[]});added++;}await refresh();return added;
+async function sync(){
+  if(syncing)return;
+  syncing=true;
+  try{
+    const result=await syncRecords();
+    await refresh();
+    try{await api('/api/automation/sync',{method:'POST',data:{}});}catch(error){toast(error.message);}
+    automation=await api('/api/automation/status');
+    render();
+    toast(lang==='te'?`${result.uploaded||0} రికార్డులు అప్‌లోడ్ అయ్యాయి; ${automation.pending} n8n పెండింగ్.`:`${result.uploaded||0} records uploaded; ${automation.pending} n8n events pending.`);
+  }catch(error){toast(error.message);}
+  finally{syncing=false;}
 }
+
 function bindSettings(){
- if($('#legacy-import'))$('#legacy-import').onclick=async()=>{try{if(indexedDB.databases&&!((await indexedDB.databases()).some(d=>d.name==='drishti-demo')))return toast('No previous v0.1 device records found in this browser.');const legacy=await new Promise((resolve,reject)=>{const request=indexedDB.open('drishti-demo');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});if(!legacy.objectStoreNames.contains('patients')){legacy.close();return toast('No previous records found.');}const rows=await new Promise((resolve,reject)=>{const request=legacy.transaction('patients','readonly').objectStore('patients').getAll();request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});legacy.close();const count=await importScreenings(rows);render();toast(`${count} previous screenings imported. Original records preserved. Sync to share.`);}catch(error){toast(error.message);}};
- $('#sync').onclick=sync;
- if($('#seed'))$('#seed').onclick=async()=>{await seed();await refresh();render();toast(lang==='te'?'కల్పిత స్క్రీనింగ్‌లు పరికరంలో సేవ్ అయ్యాయి. సింక్ చేయండి.':'Synthetic screenings saved on device. Sync to share them.');};
- $('#export').onclick=()=>{const blob=new Blob([JSON.stringify({schema:2,exportedAt:new Date().toISOString(),patients},null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='drishti-demo-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);};
- if($('#import'))$('#import').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;if(f.size>25*1024*1024)throw Error('Backup too large.');const data=JSON.parse(await f.text());if(![1,2].includes(data.schema)||!Array.isArray(data.patients)||data.patients.length>1000)throw Error('Invalid backup.');for(const p of data.patients){if(typeof p.id!=='string'||!/^AD-[A-Za-z0-9-]+$/.test(p.id)||typeof p.name!=='string'||typeof p.village!=='string'||!Number.isInteger(p.age)||p.age<1||p.age>120||(p.photo&&!/^data:image\/(jpeg|png|webp);base64,/.test(p.photo)))throw Error('Invalid patient in backup.');}for(const p of data.patients)if(!patients.some(existing=>existing.id===p.id)){await createScreening({...p,stage:'screened',notes:'',facility:'',due:'',version:undefined,timeline:[],consent:p.consent===true});}await refresh();render();toast('Imported new screenings; existing records preserved. Sync to share.');}catch(error){toast(error.message||'Invalid backup.');}};
- if(navigator.storage?.estimate)navigator.storage.estimate().then(s=>{if($('#storage-status'))$('#storage-status').textContent=`Device storage: ${((s.usage||0)/1048576).toFixed(1)} MB used`;});
+  $('#sync').onclick=sync;
+  if($('#seed'))$('#seed').onclick=async()=>{
+    await seed();
+    await refresh();
+    render();
+    toast(lang==='te'?'కల్పిత స్క్రీనింగ్‌లు పరికరంలో సేవ్ అయ్యాయి. సింక్ చేయండి.':'Synthetic screenings saved on device. Sync to share them.');
+  };
+  $('#export').onclick=()=>{
+    const blob=new Blob([JSON.stringify({schema:2,exportedAt:new Date().toISOString(),patients},null,2)],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='drishti-demo-backup.json';
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  };
 }
-async function seed(){for(const [i,village] of ['Paderu','Araku','Hukumpeta'].entries()){const id='AD-DEMO-SHARED-'+(i+1);if(patients.some(p=>p.id===id))continue;await createScreening({id,name:['Demo Lakshmi','Demo Ravi','Demo Sita'][i],village,age:35+i*5,phone:'',history:'Synthetic screening history for workflow demonstration.',consent:true,stage:'screened',photo:null,createdAt:new Date().toISOString(),timeline:[]});}}
-function showLogin(){hideAssistant();forgetSession();document.documentElement.lang=lang;$('#app').innerHTML=loginMarkup(lang);$('#login-lang').onclick=()=>{lang=lang==='en'?'te':'en';localStorage.setItem('drishti-lang',lang);showLogin();};if($('#native-server')){$('#native-server').onclick=configureServer;mountNativeConnection(lang);}document.querySelectorAll('.demo-acc-btn').forEach(b=>{b.onclick=()=>{if($('#email'))$('#email').value=b.dataset.email;if($('#password'))$('#password').value=b.dataset.pass;if($('#login-error'))$('#login-error').textContent='';};});const togglePwd=$('#toggle-pwd');if(togglePwd){togglePwd.onclick=()=>{const pwd=$('#password');if(pwd)pwd.type=pwd.type==='password'?'text':'password';};}$('#login-form').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('button[type=submit]');button.disabled=true;$('#login-error').textContent='';try{await login($('#email').value,$('#password').value);await enterWorkspace();}catch(error){$('#login-error').textContent=error.message;button.disabled=false;}};}
-async function enterWorkspace(){role=currentIdentity().user.role;await openCache();await refresh();try{await syncRecords();automation=await api('/api/automation/status');await refresh();}catch(error){if(error.status===401)return showLogin();toast(error.message);}view='dashboard';render();}
-async function pollShared(){if(!currentIdentity()||!navigator.onLine)return;try{await syncRecords();await refresh();automation=await api('/api/automation/status');if(!['screening','record','team'].includes(view))render();}catch(error){if(error.status===401){patients=[];events=[];showLogin();}}}
-async function boot(){if(!isAndroid()&&'serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});await initI18n();const identity=await recoverSession();if(identity)await enterWorkspace();else showLogin();window.addEventListener('online',()=>{if(currentIdentity()){updateConnection();pollShared();}});window.addEventListener('offline',()=>{if(currentIdentity()){updateConnection();toast(t('offline'));}});setInterval(()=>{if(currentIdentity()?.expires<Date.now()){patients=[];events=[];showLogin();return;}if(!['screening','record','team'].includes(view))pollShared();},20000);}
-boot().catch(()=>{$('#app').innerHTML='<main class="content"><h1>Device storage unavailable</h1><p>Enable browser storage and reload.</p></main>';});
+
+async function seed(){
+  for(const [i,village] of ['Paderu','Araku','Hukumpeta'].entries()){
+    const id='AD-DEMO-SHARED-'+(i+1);
+    if(patients.some(p=>p.id===id))continue;
+    await createScreening({
+      id,
+      name:['Demo Lakshmi','Demo Ravi','Demo Sita'][i],
+      village,
+      age:35+i*5,
+      phone:'987654321'+i,
+      history:'Synthetic screening history for workflow demonstration.',
+      consent:true,
+      stage:'screened',
+      photo:null,
+      createdAt:new Date().toISOString(),
+      timeline:[]
+    });
+  }
+}
+
+// -------------------------------------------------------------
+// PUBLIC WEBSITE VIEW
+// -------------------------------------------------------------
+function showPublicSite(){
+  hideAssistant();
+  document.documentElement.lang = lang;
+  $('#app').innerHTML = publicSiteMarkup(lang);
+  window.scrollTo(0,0);
+
+  const langBtn = $('#public-lang-btn');
+  if(langBtn){
+    langBtn.onclick = () => {
+      lang = lang === 'en' ? 'te' : 'en';
+      localStorage.setItem('drishti-lang', lang);
+      i18nSetLanguage(lang);
+      showPublicSite();
+    };
+  }
+
+  const navLogin = $('#nav-login-btn');
+  if(navLogin) navLogin.onclick = () => showLogin();
+  const heroLogin = $('#hero-login-btn');
+  if(heroLogin) heroLogin.onclick = () => showLogin();
+  const footerLogin = $('#footer-login-btn');
+  if(footerLogin) footerLogin.onclick = () => showLogin();
+}
+
+// -------------------------------------------------------------
+// AUTHENTICATED LOGIN VIEW
+// -------------------------------------------------------------
+function showLogin(){
+  hideAssistant();
+  forgetSession();
+  document.documentElement.lang=lang;
+  $('#app').innerHTML=loginMarkup(lang);
+  window.scrollTo(0,0);
+
+  const backBtns = [$('#back-to-public-btn'), $('#back-public-link')];
+  backBtns.forEach(b => {
+    if(b) b.onclick = () => showPublicSite();
+  });
+
+  const langBtn = $('#login-lang');
+  if(langBtn){
+    langBtn.onclick=()=>{
+      lang=lang==='en'?'te':'en';
+      localStorage.setItem('drishti-lang',lang);
+      showLogin();
+    };
+  }
+
+  if($('#native-server')){
+    $('#native-server').onclick=configureServer;
+    mountNativeConnection(lang);
+  }
+
+  document.querySelectorAll('.demo-acc-btn').forEach(b=>{
+    b.onclick=()=>{
+      if($('#email'))$('#email').value=b.dataset.email;
+      if($('#password'))$('#password').value=b.dataset.pass;
+      if($('#login-error'))$('#login-error').textContent='';
+    };
+  });
+
+  const togglePwd=$('#toggle-pwd');
+  if(togglePwd){
+    togglePwd.onclick=()=>{
+      const pwd=$('#password');
+      if(pwd)pwd.type=pwd.type==='password'?'text':'password';
+    };
+  }
+
+  $('#login-form').onsubmit=async e=>{
+    e.preventDefault();
+    const button=e.target.querySelector('button[type=submit]');
+    button.disabled=true;
+    $('#login-error').textContent='';
+    try{
+      await login($('#email').value,$('#password').value);
+      await enterWorkspace();
+    }catch(error){
+      $('#login-error').textContent=error.message;
+      button.disabled=false;
+    }
+  };
+}
+
+async function enterWorkspace(){
+  role=currentIdentity().user.role;
+  await openCache();
+  await refresh();
+  try{
+    await syncRecords();
+    automation=await api('/api/automation/status');
+    await refresh();
+  }catch(error){
+    if(error.status===401)return showLogin();
+    toast(error.message);
+  }
+  view = role==='patient' ? 'patient_portal' : 'dashboard';
+  render();
+}
+
+async function pollShared(){
+  if(!currentIdentity()||!navigator.onLine)return;
+  try{
+    await syncRecords();
+    await refresh();
+    automation=await api('/api/automation/status');
+    if(!['screening','record','team'].includes(view))render();
+  }catch(error){
+    if(error.status===401){patients=[];events=[];showLogin();}
+  }
+}
+
+async function boot(){
+  if(!isAndroid()&&'serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  await initI18n();
+  const identity=await recoverSession();
+  if(identity){
+    await enterWorkspace();
+  }else{
+    // Default entry point: Public Website
+    showPublicSite();
+  }
+  window.addEventListener('online',()=>{if(currentIdentity()){updateConnection();pollShared();}});
+  window.addEventListener('offline',()=>{if(currentIdentity()){updateConnection();toast(t('offline'));}});
+  setInterval(()=>{
+    if(currentIdentity()?.expires<Date.now()){
+      patients=[];events=[];showLogin();return;
+    }
+    if(!['screening','record','team'].includes(view))pollShared();
+  },20000);
+}
+
+boot().catch(()=>{
+  $('#app').innerHTML='<main class="content"><h1>Device storage unavailable</h1><p>Enable browser storage and reload.</p></main>';
+});

@@ -218,6 +218,56 @@ export const migrations = [
       db.exec('CREATE INDEX IF NOT EXISTS idx_referrals_status ON referrals(status);');
     },
   },
+  {
+    version: 7,
+    name: '007_roles_investigations_and_navigation',
+    up(db) {
+      db.exec(`
+        PRAGMA foreign_keys = OFF;
+        CREATE TABLE IF NOT EXISTS users_v7(
+          id TEXT PRIMARY KEY,
+          email TEXT NOT NULL UNIQUE,
+          name TEXT NOT NULL,
+          role TEXT NOT NULL CHECK(role IN ('worker', 'asha', 'doctor', 'specialist', 'hospital', 'navigator', 'admin', 'patient')),
+          password_hash TEXT NOT NULL,
+          active INTEGER NOT NULL DEFAULT 1
+        );
+        INSERT OR IGNORE INTO users_v7 SELECT id, email, name, role, password_hash, active FROM users;
+        DROP TABLE users;
+        ALTER TABLE users_v7 RENAME TO users;
+        PRAGMA foreign_keys = ON;
+
+        CREATE TABLE IF NOT EXISTS investigations(
+          id TEXT PRIMARY KEY,
+          patient_id TEXT NOT NULL REFERENCES patients(id),
+          referral_id TEXT,
+          test_type TEXT NOT NULL CHECK(test_type IN ('biopsy', 'histopathology', 'cytology', 'radiology_opg', 'routine_blood')),
+          facility TEXT NOT NULL,
+          ordered_by TEXT NOT NULL REFERENCES users(id),
+          status TEXT NOT NULL DEFAULT 'ordered' CHECK(status IN ('ordered', 'sample_collected', 'processing', 'reported', 'completed', 'cancelled')),
+          clinical_findings TEXT,
+          report_url TEXT,
+          ordered_at TEXT NOT NULL,
+          reported_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_investigations_patient ON investigations(patient_id);
+
+        CREATE TABLE IF NOT EXISTS patient_navigation(
+          id TEXT PRIMARY KEY,
+          patient_id TEXT NOT NULL REFERENCES patients(id),
+          referral_id TEXT,
+          navigator_id TEXT NOT NULL REFERENCES users(id),
+          contact_status TEXT NOT NULL DEFAULT 'pending' CHECK(contact_status IN ('pending', 'contacted', 'unreachable', 'visit_scheduled')),
+          barrier_identified TEXT,
+          attendance_confirmed INTEGER DEFAULT 0,
+          notes TEXT,
+          followup_due TEXT,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_navigation_patient ON patient_navigation(patient_id);
+      `);
+    },
+  },
 ];
 
 /**
@@ -241,6 +291,7 @@ export function applyMigrations(db) {
   let appliedCount = 0;
   for (const m of migrations) {
     if (!appliedVersions.has(m.version)) {
+      db.exec('PRAGMA foreign_keys = OFF;');
       db.exec('BEGIN IMMEDIATE');
       try {
         m.up(db);
@@ -250,9 +301,11 @@ export function applyMigrations(db) {
           new Date().toISOString()
         );
         db.exec('COMMIT');
+        db.exec('PRAGMA foreign_keys = ON;');
         appliedCount++;
       } catch (error) {
         db.exec('ROLLBACK');
+        db.exec('PRAGMA foreign_keys = ON;');
         throw new Error(`Migration ${m.version} (${m.name}) failed: ${error.message}`);
       }
     }

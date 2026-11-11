@@ -115,5 +115,12 @@ export async function reviewPatient(patient){if(!navigator.onLine)throw Error('C
 export async function listReferrals(query=''){return api(`/api/referrals${query?`?${query}`:''}`);}
 export async function updateReferral(referralId,status,notes=''){return api(`/api/referrals/${encodeURIComponent(referralId)}`,{method:'PATCH',data:{status,notes}});}
 export async function createReferral(patientId,data){return api(`/api/patients/${encodeURIComponent(patientId)}/referrals`,{method:'POST',data});}
+export async function fetchDashboardStats(){return api('/api/dashboard/stats');}
+export async function listInvestigations(query=''){return api(`/api/investigations${query?`?${query}`:''}`);}
+export async function createInvestigation(data){return api('/api/investigations',{method:'POST',data});}
+export async function updateInvestigation(id,data){return api(`/api/investigations/${encodeURIComponent(id)}`,{method:'PATCH',data});}
+export async function listNavigation(query=''){return api(`/api/navigation${query?`?${query}`:''}`);}
+export async function createNavigation(data){return api('/api/navigation',{method:'POST',data});}
+
 
 
