@@ -1,0 +1,24 @@
+# Latest cloud APK: 0.3.5 (code 8)
+
+[Download the cloud-connected APK](https://github.com/rajamanu2/HACKATHON-2026-ITDA/raw/refs/heads/main/downloads/Aarogya-Drishti-0.3.5.apk)
+
+Fixes the login loop caused by selecting a Cloudflare proxy cookie instead of drishti_session. Regression tests cover both header orders, unrelated cookies and logout. Live login/session/workspace checks passed through the actual Java transport.
+
+Uses the live Cloudflare HTTPS care server, independent of the PC. Fifty new care-team accounts are configured; use the private account list supplied by the administrator. Same signer: update the installed app without uninstalling. If prompted, select Use latest address and Test & connect. See [cloud deployment details](../CLOUDFLARE-LIVE.md).
+
+SHA-256: `a699b2395d95826421bd73a4b4660c5210b962fb12ac66f9de622bca3b86e835`.
+
+The older LAN APK below is retained for history; use the cloud link above for the hackathon.
+
+# Android update 0.3.3 (code 6)
+
+[Download Aarogya Drishti 0.3.3](https://github.com/rajamanu2/HACKATHON-2026-ITDA/raw/refs/heads/main/downloads/Aarogya-Drishti-0.3.3.apk)
+
+- 612,020 bytes (about 598 KiB), increased from the prior 100,733-byte APK through bundled Telugu/English fonts, licenses, phone-intake interface and offline guide.
+- SHA-256: `b831b38110f9ec5f183c6c513b3db05a11a769956599b92900842215f9495a78`.
+- Existing package identity and signing certificate retained. Install as an update; do not uninstall or clear data.
+- The app contains the phone-intake screen, n8n request/status API integration and a bundled Telugu/English guide. Paid calling remains disabled until Bolna agents, credentials and calling-budget approval are configured.
+- APK hosting on GitHub is independent of the PC. The shared care backend is NOT permanently hosted yet. This build retains the current configurable LAN server default (`http://192.168.1.3:4174`); the phone previously could not reach it. Downloading this APK does not solve that server connectivity issue. Connect a verified reachable care-server address when cloud hosting is ready. Existing offline queues and accounts should be preserved before changing server instances.
+- Build and Android lint passed; signature matches the previous APK. Browser checks passed with offline fonts. Real handset installation and actual phone calls remain unverified.
+
+Open font sources and licenses are included under public/fonts. Fonts are from the official google/fonts repository: Noto Sans Telugu and Outfit, licensed under SIL Open Font License 1.1. No passwords, signing keys, provider keys, database files, patient photographs or voice recordings are included in this APK.

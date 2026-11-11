@@ -1,0 +1,15 @@
+node_modules/
+.env
+test-results/
+*.log
+.local/
+.test-data/
+*.sqlite*
+android/.gradle/
+android/**/build/
+android/local.properties
+android/app/src/main/assets/web/
+dist/
+*.apk
+*.aab
+care-cloudflare/

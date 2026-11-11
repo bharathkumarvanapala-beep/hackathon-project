@@ -1,0 +1,26 @@
+{
+  "notice": "Local synthetic demo accounts. Keep this file private.",
+  "accounts": [
+    {
+      "id": "9af38ff7-42c5-4576-95ca-e082a8d45941",
+      "email": "worker@drishti.local",
+      "name": "Health worker",
+      "role": "worker",
+      "password": "twrcI228wVwoJhZTPBMxsG6I"
+    },
+    {
+      "id": "564cba39-130e-4068-abd3-6fdf30e6be49",
+      "email": "doctor@drishti.local",
+      "name": "Medical officer",
+      "role": "doctor",
+      "password": "RBy9MEPtiwfeXILbw4n95n1Z"
+    },
+    {
+      "id": "4648c900-3777-475d-b213-52e6aac5cd83",
+      "email": "admin@drishti.local",
+      "name": "District administrator",
+      "role": "admin",
+      "password": "6Nr1BW4vrlbcoNl73rWiV9ni"
+    }
+  ]
+}

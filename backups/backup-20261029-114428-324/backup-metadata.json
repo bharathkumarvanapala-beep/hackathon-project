@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "createdAt": "2026-10-29T11:44:28.324Z",
+  "version": "0.3.0",
+  "platform": "Aarogya Drishti · ITDA Paderu",
+  "counts": {
+    "patients": 10,
+    "referrals": 0,
+    "images": 1,
+    "clinicalReviews": 0
+  },
+  "files": {
+    "drishti.sqlite": {
+      "size": 278528,
+      "sha256": "8ed3cf376f9ef88dc8ec717b59e3ef8dff06fc5ff4b1aaa72c7eca57226c8d92"
+    },
+    "demo-accounts.json": {
+      "size": 713,
+      "sha256": "4dca17bd081de6d3d5250a6e90977e77564ce57e65c513913294d96598407fe2"
+    }
+  },
+  "images": [
+    {
+      "name": "6b7fa434f92a8b80aab02d9bf1a12e49ffcae424e4013a1c4f68b67e3d2bbcd0.png",
+      "size": 70,
+      "sha256": "6b7fa434f92a8b80aab02d9bf1a12e49ffcae424e4013a1c4f68b67e3d2bbcd0"
+    }
+  ]
+}
