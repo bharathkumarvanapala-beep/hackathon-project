@@ -1804,20 +1804,208 @@ function showLogin(){
     if(b) b.onclick = () => showPublicSite();
   });
 
-  const langBtn = $('#login-lang');
-  if(langBtn){
-    langBtn.onclick=()=>{
-      lang=lang==='en'?'te':'en';
-      localStorage.setItem('drishti-lang',lang);
-      showLogin();
+  // Language switchers
+  const switchLang = (newLang) => {
+    lang = newLang;
+    localStorage.setItem('drishti-lang', lang);
+    showLogin();
+  };
+  ['#login-lang-en', '#card-lang-en'].forEach(sel => {
+    const btn = $(sel);
+    if(btn) btn.onclick = () => switchLang('en');
+  });
+  ['#login-lang-te', '#card-lang-te'].forEach(sel => {
+    const btn = $(sel);
+    if(btn) btn.onclick = () => switchLang('te');
+  });
+  const legacyLangBtn = $('#login-lang');
+  if(legacyLangBtn){
+    legacyLangBtn.onclick = () => switchLang(lang === 'en' ? 'te' : 'en');
+  }
+
+  // Duty Designation descriptions & IDs map
+  const roleDetails = {
+    asha: {
+      title: lang === 'te' ? 'ఆశా / ANM ఫీల్డ్ వర్కర్ • ఆఫ్‌లైన్ సింక్ క్యూ' : 'Frontline Field Worker Access • Offline Sync Queue',
+      desc: lang === 'te' ? 'గ్రామాల్లో నోటి స్క్రీనింగ్, బయోమెట్రిక్ సమ్మతి మరియు రిమోట్ ఫోటో క్యాప్చర్‌కు అధికారం.' : 'Authorized for village oral screening, patient biometric consent, and photo capture in remote habitations.',
+      id: 'AP-ASR-ASHA-9902',
+      email: 'asha@drishti.demo',
+      hub: lang === 'te' ? 'ధృవీకరించి స్క్రీనింగ్ హబ్ తెరవండి' : 'Authenticate & Open Screening Hub'
+    },
+    doctor: {
+      title: lang === 'te' ? 'వైద్యాధికారి / డెంటిస్ట్ లాగిన్ • క్లినికల్ ట్రయాజ్' : 'Medical Officer / Dental Surgeon • Clinical Triage Desk',
+      desc: lang === 'te' ? '24 గంటల్లోపు ఏజెన్సీ స్క్రీనింగ్‌లను సమీక్షించి, అనుమానాస్పద కేసులను ట్రయాజ్ చేయడానికి లైసెన్స్ పొందిన డాక్టర్ పోర్టల్.' : 'Licensed clinician queue to evaluate oral image AI findings, triage high-risk lesions within 24h, and prescribe care pathways.',
+      id: '32-8812-9901',
+      email: 'doctor@drishti.demo',
+      hub: lang === 'te' ? 'ధృవీకరించి డాక్టర్ పోర్టల్ తెరవండి' : 'Authenticate & Open Clinician Queue'
+    },
+    specialist: {
+      title: lang === 'te' ? 'పాథాలజిస్ట్ / ఆంకాలజీ స్పెషలిస్ట్ • బయాప్సీ రివ్యూ' : 'Onco-Pathologist & Specialist • Biopsy Diagnostic Cell',
+      desc: lang === 'te' ? 'హిస్టోపాథాలజీ రిపోర్టులు, బయాప్సీ స్పెసిమెన్ విశ్లేషణ మరియు క్యాన్సర్ నిర్ధారణ నిర్వహణ.' : 'Authorized for ordering tissue biopsy, digital slide examination, and pathology staging reports.',
+      id: 'LAB-ASR-8409',
+      email: 'specialist@drishti.demo',
+      hub: lang === 'te' ? 'ధృవీకరించి పాథాలజీ డెస్క్ తెరవండి' : 'Authenticate & Open Pathology Desk'
+    },
+    admin: {
+      title: lang === 'te' ? 'ITDA ప్రాజెక్ట్ ఆఫీసర్ • డిస్ట్రిక్ట్ ఆన్కో-సర్వైలెన్స్' : 'ITDA Nodal Authority • District Onco-Surveillance Hub',
+      desc: lang === 'te' ? '18 ఏజెన్సీ మండలాల్లో స్క్రీనింగ్ కవరేజ్, సిబ్బంది కేటాయింపు మరియు ఆరోగ్య సంక్షేమ పర్యవేక్షణ.' : 'District magistrate command center for monitoring agency screening rates, referral logistics, and mobile fleet deployment.',
+      id: 'GOV-AP-ITDA-01',
+      email: 'admin@drishti.demo',
+      hub: lang === 'te' ? 'ధృవీకరించి జిల్లా డ్యాష్‌బోర్డ్ తెరవండి' : 'Authenticate & Open District Portal'
+    }
+  };
+
+  const selectRole = (roleKey, customId = null) => {
+    const details = roleDetails[roleKey] || roleDetails.asha;
+    
+    // Highlight designation button
+    document.querySelectorAll('.designation-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.role === roleKey);
+    });
+
+    // Update info callout
+    const titleEl = $('#desig-info-title');
+    const descEl = $('#desig-info-desc');
+    if(titleEl) titleEl.textContent = details.title;
+    if(descEl) descEl.textContent = details.desc;
+
+    // Update submit button text
+    const submitText = $('#btn-submit-text');
+    if(submitText) submitText.textContent = details.hub;
+
+    // Populate credentials
+    const emailInput = $('#email');
+    const pwdInput = $('#password');
+    if(emailInput) emailInput.value = customId || details.id;
+    if(pwdInput) pwdInput.value = 'Drishti@2026';
+
+    // Highlight staff card if matching
+    document.querySelectorAll('.staff-profile-card').forEach(card => {
+      card.classList.toggle('active-card', card.dataset.fillRole === roleKey);
+    });
+
+    const err = $('#login-error');
+    if(err) err.textContent = '';
+  };
+
+  // 1. Pre-Configured Evaluator & Staff Cards
+  document.querySelectorAll('.staff-profile-card').forEach(card => {
+    card.onclick = () => {
+      const roleKey = card.dataset.fillRole;
+      const idVal = card.dataset.fillId;
+      selectRole(roleKey, idVal);
+    };
+  });
+
+  // 2. Designation Buttons
+  document.querySelectorAll('.designation-btn').forEach(btn => {
+    btn.onclick = () => {
+      const roleKey = btn.dataset.role;
+      selectRole(roleKey);
+    };
+  });
+
+  // 3. Top Navigation Shortcuts
+  document.querySelectorAll('[data-role-select]').forEach(btn => {
+    btn.onclick = () => {
+      const roleKey = btn.dataset.roleSelect;
+      selectRole(roleKey);
+    };
+  });
+
+  // 4. Quick Demo Dropdown Menu
+  const demoMenuBtn = $('#btn-quick-demo-menu');
+  const demoMenu = $('#quick-demo-menu');
+  if(demoMenuBtn && demoMenu){
+    demoMenuBtn.onclick = (e) => {
+      e.stopPropagation();
+      demoMenu.style.display = demoMenu.style.display === 'none' ? 'flex' : 'none';
+    };
+    document.addEventListener('click', () => {
+      if(demoMenu) demoMenu.style.display = 'none';
+    }, { once: false });
+  }
+
+  document.querySelectorAll('.quick-menu-item').forEach(item => {
+    item.onclick = (e) => {
+      e.stopPropagation();
+      if(demoMenu) demoMenu.style.display = 'none';
+      const roleKey = item.dataset.fillRole;
+      const acc = item.dataset.fillAcc;
+      if(roleDetails[roleKey]){
+        selectRole(roleKey, acc);
+      } else {
+        // Patient or Hospital
+        if($('#email')) $('#email').value = acc;
+        if($('#password')) $('#password').value = 'Drishti@2026';
+        if($('#desig-info-title')) $('#desig-info-title').textContent = `${item.textContent.trim()} Portal`;
+        if($('#desig-info-desc')) $('#desig-info-desc').textContent = lang === 'te' 
+          ? 'గుర్తింపు ధృవీకరణ విజయవంతమైంది. సిస్టమ్‌లోకి ప్రవేశించడానికి లాగిన్ బటన్ నొక్కండి.' 
+          : 'Role credentials loaded. Click Authenticate to enter workspace.';
+        if($('#btn-submit-text')) $('#btn-submit-text').textContent = `Authenticate & Open Workspace`;
+        document.querySelectorAll('.designation-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.staff-profile-card').forEach(c => c.classList.remove('active-card'));
+      }
+    };
+  });
+
+  // 5. ABHA / ABDM Verify & Triage SOP Buttons
+  const btnAbhaVerify = $('#btn-abha-verify');
+  if(btnAbhaVerify){
+    btnAbhaVerify.onclick = () => {
+      toast(lang === 'te'
+        ? 'ABHA M3 ధృవీకరణ: Startek FM220U బయోమెట్రిక్ స్కానర్ సిద్ధంగా ఉంది. తక్షణ సెక్యూరిటీ టోకెన్ యాక్టివ్‌గా ఉంది.'
+        : 'ABHA Milestone-3 Status: Startek FM220U biometric sensor active. Instant 2FA token verified with NDHM sandbox.');
     };
   }
 
+  const btnTriageSOP = $('#btn-triage-sop');
+  if(btnTriageSOP){
+    btnTriageSOP.onclick = () => {
+      toast(lang === 'te'
+        ? 'క్లినికల్ SOP: 1. డోర్‌స్టెప్ స్క్రీనింగ్ ➔ 2. జెమిని AI 1.5 విజన్ చెక్ ➔ 3. 24 గంటల డాక్టర్ రివ్యూ ➔ 4. బయాప్సీ ఆర్డర్ ➔ 5. పాడేరు హాస్పిటల్ కేర్.'
+        : 'Clinical SOP: 1. Doorstep Screening ➔ 2. Gemini 1.5 Vision Analysis ➔ 3. 24h MO Triage ➔ 4. Biopsy/Pathology ➔ 5. KGH Vizag Referral.');
+    };
+  }
+
+  // 6. Voice Prompt Audio Guidance
+  const voiceBtn = $('#btn-voice-prompt');
+  if(voiceBtn){
+    voiceBtn.onclick = () => {
+      if('speechSynthesis' in window){
+        window.speechSynthesis.cancel();
+        const text = lang === 'te'
+          ? 'దయచేసి మీ ప్రభుత్వ ఆరోగ్య సేవకుడి ఐడి లేదా ABHA ID మరియు పాస్‌వర్డ్ నమోదు చేయండి'
+          : 'Please enter your government healthcare worker ID or ABHA ID and authorized PIN';
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = lang === 'te' ? 'te-IN' : 'en-IN';
+        utter.rate = 0.95;
+        window.speechSynthesis.speak(utter);
+      }
+      toast(lang === 'te'
+        ? 'వాయిస్ గైడెన్స్: మీ ప్రభుత్వ ఆరోగ్య సేవకుడి ఐడి లేదా ABHA ID ఎంటర్ చేయండి.'
+        : 'Voice Prompt: Enter your Government Healthcare Worker ID or ABHA HP ID.');
+    };
+  }
+
+  // 7. Forgot Password & Recovery links
+  const forgotLink = $('#link-forgot-pwd');
+  if(forgotLink){
+    forgotLink.onclick = (e) => {
+      e.preventDefault();
+      toast(lang === 'te'
+        ? 'పాస్‌వర్డ్ రీసెట్: డెమో ఖాతాల డిఫాల్ట్ పాస్‌వర్డ్ "Drishti@2026". అత్యవసర రీసెట్ కోసం ITDA హెల్త్ డెస్క్‌ను సంప్రదించండి.'
+        : 'Password Reset: Default demo password is "Drishti@2026". For institutional resets, contact ITDA Nodal Health Officer.');
+    };
+  }
+
+  // 8. Native server config
   if($('#native-server')){
     $('#native-server').onclick=configureServer;
     mountNativeConnection(lang);
   }
 
+  // 9. Legacy demo buttons
   document.querySelectorAll('.demo-acc-btn').forEach(b=>{
     b.onclick=()=>{
       if($('#email'))$('#email').value=b.dataset.email;
@@ -1826,6 +2014,7 @@ function showLogin(){
     };
   });
 
+  // 10. Toggle password visibility
   const togglePwd=$('#toggle-pwd');
   if(togglePwd){
     togglePwd.onclick=()=>{
@@ -1834,6 +2023,7 @@ function showLogin(){
     };
   }
 
+  // 11. Login form submit
   $('#login-form').onsubmit=async e=>{
     e.preventDefault();
     const button=e.target.querySelector('button[type=submit]');

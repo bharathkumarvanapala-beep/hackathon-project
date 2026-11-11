@@ -80,7 +80,12 @@ export async function startServer(options={}){
       return json(res,200,{terms:getConsentTerms(version,lang)});
     }
     if(path==='/api/auth/login'&&method==='POST'){
-     const input=await body(req,4096);const email=string(input.email,150,true).toLowerCase(),password=string(input.password,256,true);const remote=(process.env.TRUST_CLOUDFLARE==='true'&&['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)?req.headers['cf-connecting-ip']:null)||req.socket.remoteAddress;const key=remote+'|'+email;const now=Date.now();if(attempts.size>10000)for(const [k,v] of attempts)if(v.until<now)attempts.delete(k);let rate=attempts.get(key);if(!rate||rate.until<now){rate={count:0,until:now+15*60_000};attempts.set(key,rate);}if(rate.count>=10)fail(429,'Too many sign-in attempts. Try again in 15 minutes.');rate.count++;
+     const input=await body(req,4096);
+     const rawId=string(input.email||input.identifier||input.username,150,true).toLowerCase().trim();
+     const idAliases={'ap-asr-asha-9902':'asha@drishti.demo','32-8812-9901':'doctor@drishti.demo','hpr: 32-8812-9901':'doctor@drishti.demo','lab-asr-8409':'specialist@drishti.demo','gov-ap-itda-01':'admin@drishti.demo'};
+     const email=idAliases[rawId]||rawId;
+     const password=string(input.password,256,true);
+     const remote=(process.env.TRUST_CLOUDFLARE==='true'&&['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)?req.headers['cf-connecting-ip']:null)||req.socket.remoteAddress;const key=remote+'|'+email;const now=Date.now();if(attempts.size>10000)for(const [k,v] of attempts)if(v.until<now)attempts.delete(k);let rate=attempts.get(key);if(!rate||rate.until<now){rate={count:0,until:now+15*60_000};attempts.set(key,rate);}if(rate.count>=10)fail(429,'Too many sign-in attempts. Try again in 15 minutes.');rate.count++;
      const u=db.prepare('SELECT * FROM users WHERE email=? AND active=1').get(email);const hash=u?.password_hash||dummyPasswordHash;const [salt,expected]=hash.split(':');const actual=await new Promise((resolve,reject)=>scrypt(password,salt,64,(error,key)=>error?reject(error):resolve(key)));if(!timingSafeEqual(Buffer.from(expected,'hex'),actual)||!u)fail(401,'Email or password is incorrect.');attempts.delete(key);
      const token=randomBytes(32).toString('base64url'),csrfToken=randomBytes(24).toString('base64url'),expires=now+12*60*60_000;db.prepare('DELETE FROM sessions WHERE expires<?').run(now);db.prepare('INSERT INTO sessions VALUES(?,?,?,?)').run(digest(token),u.id,csrfToken,expires);audit(db,u,'auth.login');return json(res,200,{user:userShape(u),csrf:csrfToken,expires,instanceId},{'Set-Cookie':`drishti_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200${requestSecure?'; Secure':''}`});
     }
