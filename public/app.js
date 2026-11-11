@@ -1712,10 +1712,20 @@ function showPublicSite(){
   $('#app').innerHTML = publicSiteMarkup(lang);
   window.scrollTo(0,0);
 
-  const langBtn = $('#public-lang-btn');
-  if(langBtn){
-    langBtn.onclick = () => {
-      lang = lang === 'en' ? 'te' : 'en';
+  const langEn = $('#public-lang-en');
+  if(langEn){
+    langEn.onclick = () => {
+      lang = 'en';
+      localStorage.setItem('drishti-lang', lang);
+      i18nSetLanguage(lang);
+      showPublicSite();
+    };
+  }
+
+  const langTe = $('#public-lang-te');
+  if(langTe){
+    langTe.onclick = () => {
+      lang = 'te';
       localStorage.setItem('drishti-lang', lang);
       i18nSetLanguage(lang);
       showPublicSite();
@@ -1728,6 +1738,55 @@ function showPublicSite(){
   if(heroLogin) heroLogin.onclick = () => showLogin();
   const footerLogin = $('#footer-login-btn');
   if(footerLogin) footerLogin.onclick = () => showLogin();
+
+  document.querySelectorAll('[data-role-shortcut]').forEach(b => {
+    b.onclick = () => {
+      const roleTarget = b.dataset.roleShortcut;
+      const emailMap = {
+        asha: 'asha@drishti.demo',
+        doctor: 'doctor@drishti.demo',
+        specialist: 'specialist@drishti.demo',
+        admin: 'admin@drishti.demo'
+      };
+      showLogin();
+      const emailInput = $('#email');
+      const pwdInput = $('#password');
+      if(emailInput && emailMap[roleTarget]) emailInput.value = emailMap[roleTarget];
+      if(pwdInput) pwdInput.value = 'Drishti@2026';
+    };
+  });
+
+  const btnVerify = $('#btn-verify-checkup');
+  if(btnVerify){
+    btnVerify.onclick = () => {
+      toast(lang === 'te' 
+        ? '3-వేళ్ల పరీక్ష: మీ నోరు 3 వేళ్లు నిలువుగా పట్టకపోతే వెంటనే స్థానిక ఆశా కార్యకర్తను లేదా PHCని సంప్రదించండి.'
+        : '3-Finger Test: If you cannot insert 3 vertically stacked fingers, visit your nearest ITDA PHC immediately for clinical evaluation.');
+    };
+  }
+
+  const btnExplore = $('#btn-explore-arch');
+  if(btnExplore){
+    btnExplore.onclick = () => {
+      toast(lang === 'te'
+        ? 'ఆశా సింక్ ఆర్కిటెక్చర్: కొండ ప్రాంతాల్లో ఆఫ్‌లైన్ లోకల్ నిల్వ, నెట్‌వర్క్ రాగానే బ్యాక్‌గ్రౌండ్ సింక్.'
+        : 'ASHA Sync Architecture: Store-and-forward IndexedDB edge cache with automatic background dispatch on network reconnect.');
+    };
+  }
+
+  const btnVan = $('#btn-van-schedule');
+  if(btnVan){
+    btnVan.onclick = () => {
+      document.querySelector('#facilities')?.scrollIntoView({ behavior: 'smooth' });
+    };
+  }
+
+  const btnBottomLocate = $('#btn-bottom-locate');
+  if(btnBottomLocate){
+    btnBottomLocate.onclick = () => {
+      document.querySelector('#facilities')?.scrollIntoView({ behavior: 'smooth' });
+    };
+  }
 }
 
 // -------------------------------------------------------------
