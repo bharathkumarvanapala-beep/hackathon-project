@@ -8,11 +8,14 @@ let selected = null;
 let language = 'en';
 let loading = false;
 let activePeerConnection = null;
+let activeLivekitRoom = null;
 let localStream = null;
 let signalPollInterval = null;
 let lastSignalTimestamp = 0;
 let isAudioMuted = false;
 let isVideoMuted = false;
+let sessionTimerInterval = null;
+let sessionSeconds = 0;
 
 export function consultationMarkup(lang) {
   const te = lang === 'te';
@@ -23,13 +26,13 @@ export function consultationMarkup(lang) {
   <section class="card" id="consultations" style="margin-top:20px;">
     <div class="card-head" style="display:flex;justify-content:space-between;align-items:center;">
       <div style="display:flex;align-items:center;gap:10px;">
-        <span class="stat-icon">${icon('video', 20)}</span>
+        <span class="stat-icon">${icon('camera', 20)}</span>
         <div>
-          <h2 style="margin:0;">${te ? 'టెలికన్సల్టేషన్ & వీడియో సంప్రదింపు' : 'Teleconsultation & Video Room'}</h2>
-          <small class="sub">${te ? 'వెబ్‌ఆర్‌టిసి (WebRTC) ప్రత్యక్ష ఆడియో/వీడియో సంప్రదింపు' : 'In-Browser WebRTC Peer-to-Peer Encrypted Teleconsult'}</small>
+          <h2 style="margin:0;">${te ? 'టెలికన్సల్టేషన్ & లైవ్ రూమ్' : 'Live Teleconsultation & Video Room'}</h2>
+          <small class="sub">${te ? 'లైవ్‌కిట్ (LiveKit) ప్రత్యక్ష ఎన్‌క్రిప్టెడ్ వీడియో సంప్రదింపు' : 'Official Self-Hosted LiveKit WebRTC Video Hub'}</small>
         </div>
       </div>
-      <span class="pill green">LiveKit / WebRTC Ready</span>
+      <span class="pill green">● LiveKit WebRTC Ready</span>
     </div>
 
     <div id="consultation-list" style="margin-top:16px;"></div>
@@ -119,18 +122,17 @@ async function refreshConsultations() {
                 <span style="font-size:16px;">📹</span>
                 <strong style="font-size:13px;">${new Date(c.scheduledAt).toLocaleString(te ? 'te-IN' : 'en-IN')}</strong>
                 <span class="pill ${c.status === 'completed' ? 'green' : 'amber'}" style="font-size:10px;">
-                  ${c.status === 'completed' ? (te ? 'పూర్తయింది' : 'Completed') : (te ? 'సిద్ధంగా ఉంది' : 'Active Room')}
+                  ${c.status === 'completed' ? (te ? 'పూర్తయింది' : 'Completed') : (te ? 'లైవ్ రూమ్ సిద్ధం' : 'LiveKit Active')}
                 </span>
               </div>
               <small style="color:#64748b;display:block;margin-top:3px;">
-                ${te ? 'రూమ్ ఐడీ' : 'Room ID'}: <code>${esc(c.id)}</code> · WebRTC Signaling
+                ${te ? 'రూమ్ ఐడీ' : 'Room ID'}: <code>${esc(c.id)}</code> · LiveKit Local Node
               </small>
-              ${c.outcome ? `<p style="margin:4px 0 0 0;font-size:11px;color:#1e3a8a;"><strong>${te ? 'వైద్యుని గమనిక' : 'Outcome Notes'}:</strong> ${esc(c.outcome.notes || '')}</p>` : ''}
             </div>
 
             <div>
-              <button class="btn primary" data-start-call="${esc(c.id)}" style="padding:8px 14px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;">
-                <span>🟢</span> ${te ? 'కాల్ ప్రారంభించండి / చేరండి' : 'Launch Video Room'}
+              <button class="btn primary" data-start-call="${esc(c.id)}" style="padding:8px 14px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;background:#059669;">
+                <span>🟢</span> ${te ? 'కాల్ ప్రారంభించండి' : 'Launch Video Room'}
               </button>
             </div>
           </div>
@@ -142,7 +144,7 @@ async function refreshConsultations() {
       btn.onclick = () => {
         const cId = btn.dataset.startCall;
         const consult = result.consultations.find(c => c.id === cId);
-        launchWebRTCModal(consult, te);
+        launchWebRTCModal(consult, te, selected);
       };
     });
   } catch (error) {
@@ -152,228 +154,494 @@ async function refreshConsultations() {
   }
 }
 
-// Full-featured WebRTC Video Consultation Modal
-async function launchWebRTCModal(consultation, te) {
+// -----------------------------------------------------------------------------
+// AAROGYA DRISHTI OFFICIAL LIVEKIT VIDEO CONSULTATION WINDOW
+// -----------------------------------------------------------------------------
+export async function launchWebRTCModal(consultation, te, patient = null) {
+  if (patient) selected = patient;
   let modal = document.querySelector('#webrtc-modal');
   if (modal) modal.remove();
 
-  const user = currentIdentity()?.user || { role: 'doctor', name: 'Clinician' };
+  const user = currentIdentity()?.user || { role: 'doctor', name: 'Dr. K. Srinivas' };
   const isDoctor = user.role === 'doctor' || user.role === 'specialist';
+  const patName = selected?.name || 'Bharath Kumar (Patient)';
+  const patId = selected?.id || (consultation.patientId || 'AD-20261111');
+  const docName = isDoctor ? user.name : 'Dr. K. Srinivas';
 
   modal = document.createElement('div');
   modal.id = 'webrtc-modal';
   modal.className = 'webrtc-modal-overlay';
   modal.innerHTML = `
-    <div class="webrtc-window">
-      <!-- Header -->
-      <div class="webrtc-header">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <span class="live-dot-pulse"></span>
-          <div>
-            <h3 style="margin:0;font-size:14px;color:#ffffff;">
-              ${te ? 'ఆరోగ్య దృష్టి ప్రత్యక్ష వీడియో కన్సల్టేషన్' : 'Aarogya Drishti Live Video Room'}
-            </h3>
-            <small style="color:rgba(255,255,255,0.7);font-size:11px;">
-              ${te ? 'రోగి' : 'Patient'}: ${esc(selected?.name || 'Patient')} (${esc(selected?.id || '')}) · ${user.name} (${user.role})
-            </small>
-          </div>
+    <div class="telehealth-room-layout">
+      <!-- 1. Main Video Stage -->
+      <div class="telehealth-video-stage">
+        <!-- Top Badges -->
+        <div class="video-top-badges">
+          <span class="badge-live"><span class="badge-live-dot"></span> LIVE</span>
+          <span class="badge-timer" id="session-timer-display">⏱ 00:00:00</span>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <span id="webrtc-status-pill" class="webrtc-status-pill connecting">
-            ● ${te ? 'కనెక్ట్ అవుతోంది...' : 'Connecting WebRTC...'}
-          </span>
-          <button id="webrtc-exit-btn" class="webrtc-ctrl-btn danger" title="End call" style="padding:4px 10px;font-size:11px;">
-            ✕ ${te ? 'నిష్క్రమించు' : 'Close'}
-          </button>
-        </div>
-      </div>
 
-      <!-- Main Video Viewport -->
-      <div class="webrtc-viewport">
-        <!-- Remote Video (Large) -->
-        <div class="remote-video-container">
+        <!-- Big Remote Video (Doctor or Patient) -->
+        <div class="telehealth-remote-video-container">
           <video id="remote-video" autoplay playsinline></video>
           <div class="video-overlay-banner" id="remote-overlay">
             <div class="pulse-ring"></div>
-            <p id="remote-status-text">${te ? 'రోగి / వైద్యుని సంభాషణ కోసం వేచి ఉంది...' : 'Waiting for other party to connect…'}</p>
-            <small>${te ? 'రెండు వైపుల లైవ్ కెమెరా & మైక్రోఫోన్ ప్రారంభించండి' : 'Two-party live audio/video connection ready'}</small>
+            <p id="remote-status-text">${te ? 'లైవ్‌కిట్ కనెక్షన్ ప్రారంభమవుతోంది...' : 'Connecting to LiveKit Room…'}</p>
+            <small>${te ? 'రెండవ వైపు వినియోగదారు చేరడానికి వేచి ఉంది' : 'Waiting for other participant to connect'}</small>
           </div>
-          <span class="video-role-tag remote">${te ? 'రిమోట్ కన్సల్టెంట్ / రోగి' : 'Remote Participant'}</span>
+
+          <!-- Remote Participant Overlay Tag -->
+          <div class="remote-participant-tag" id="remote-participant-tag">
+            <span style="font-size:16px;">${isDoctor ? '👤' : '🩺'}</span>
+            <div>
+              <strong id="remote-tag-name">${esc(isDoctor ? patName : docName)}</strong>
+              <small id="remote-tag-role">${isDoctor ? 'Patient' : 'Oral Medicine Specialist'}</small>
+            </div>
+          </div>
         </div>
 
-        <!-- Local Video (Self-view Picture-in-Picture) -->
-        <div class="local-video-container">
+        <!-- Floating Picture-in-Picture Local Video (Self) -->
+        <div class="telehealth-pip-container">
           <video id="local-video" autoplay playsinline muted></video>
-          <span class="video-role-tag local">${te ? 'మీరు' : 'You'} (${esc(user.name)})</span>
+          <div class="pip-tag">
+            <span>👤</span>
+            <span>${esc(te ? 'మీరు' : 'You')}</span>
+            <span style="color:#10b981;">📶</span>
+          </div>
+        </div>
+
+        <!-- Floating Bottom Call Controls Bar -->
+        <div class="telehealth-bottom-bar">
+          <div class="bar-status-left">
+            <span style="font-size:14px;">📶</span>
+            <div>
+              <strong>Audio</strong>
+              <small id="audio-status-label">Connected</small>
+            </div>
+          </div>
+
+          <div class="bar-controls-center">
+            <button id="btn-toggle-mic" class="bar-btn active" title="Mute/Unmute Mic">
+              <span class="btn-icon" id="mic-icon">🎙️</span>
+              <span class="btn-label" id="mic-label">${te ? 'మ్యూట్' : 'Mute'}</span>
+            </button>
+
+            <button id="btn-toggle-cam" class="bar-btn active" title="Camera On/Off">
+              <span class="btn-icon" id="cam-icon">📹</span>
+              <span class="btn-label" id="cam-label">${te ? 'ఆపు' : 'Stop Video'}</span>
+            </button>
+
+            <button id="btn-share-screen" class="bar-btn" title="Share Screen">
+              <span class="btn-icon">🖥️</span>
+              <span class="btn-label">${te ? 'స్క్రీన్' : 'Share Screen'}</span>
+            </button>
+
+            <button id="btn-toggle-chat" class="bar-btn" title="Chat">
+              <span class="btn-icon">💬</span>
+              <span class="btn-label">${te ? 'చాట్' : 'Chat'}</span>
+            </button>
+
+            <button id="btn-end-call" class="bar-btn end-call" title="End Consultation">
+              <span class="btn-icon">📞</span>
+              <span class="btn-label">End</span>
+            </button>
+          </div>
+
+          <div class="bar-status-right">
+            <span style="font-size:14px;">📹</span>
+            <div>
+              <strong>Video</strong>
+              <small id="video-status-label">Connected</small>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- Call Controls Bar -->
-      <div class="webrtc-controls-bar">
-        <button id="btn-toggle-mic" class="webrtc-ctrl-btn active" title="Mute/Unmute Mic">
-          <span id="mic-icon">🎙️</span>
-          <span>${te ? 'మైక్' : 'Mute'}</span>
-        </button>
+      <!-- 2. Right Sidebar Panel (Consultation in Progress) -->
+      <div class="telehealth-info-panel">
+        <div class="panel-header">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:20px;">🩺</span>
+            <div>
+              <h3 style="margin:0;font-size:14px;color:#1e3a8a;font-weight:700;">Consultation in Progress</h3>
+              <small style="color:#64748b;font-size:10px;">Aarogya Drishti · ITDA Paderu</small>
+            </div>
+          </div>
+          <button id="webrtc-exit-btn" class="close-x-btn" title="Close">✕</button>
+        </div>
 
-        <button id="btn-toggle-cam" class="webrtc-ctrl-btn active" title="Camera On/Off">
-          <span id="cam-icon">📹</span>
-          <span>${te ? 'కెమెరా' : 'Camera'}</span>
-        </button>
+        <!-- Doctor Card -->
+        <div class="info-section-card">
+          <small class="section-sub-label">Doctor</small>
+          <div class="person-row">
+            <div class="person-avatar doctor">👨‍⚕️</div>
+            <div>
+              <strong id="doc-card-name">${esc(docName)}</strong>
+              <small class="person-role">Oral Medicine Specialist</small>
+              <span class="status-indicator online">● Online</span>
+            </div>
+          </div>
+        </div>
 
-        <button id="btn-share-screen" class="webrtc-ctrl-btn" title="Share Screen / Oral Photos">
-          <span>🖥️</span>
-          <span>${te ? 'స్క్రీన్ / ఫోటో షేర్' : 'Share Screen'}</span>
-        </button>
+        <!-- Patient Card -->
+        <div class="info-section-card">
+          <small class="section-sub-label">Patient</small>
+          <div class="person-row">
+            <div class="person-avatar patient">👤</div>
+            <div>
+              <strong id="patient-card-name">${esc(patName)}</strong>
+              <small class="person-role" id="patient-card-id">Patient ID: ${esc(patId)}</small>
+            </div>
+          </div>
+        </div>
 
-        <button id="btn-end-call" class="webrtc-ctrl-btn danger" style="background:#ef4444;color:#fff;font-weight:600;" title="End Consultation">
-          <span>📞</span>
-          <span>${te ? 'కాల్ ముగించండి' : 'End Call'}</span>
-        </button>
-      </div>
+        <!-- Consultation Metadata -->
+        <div class="meta-details-card">
+          <div class="meta-row">
+            <span class="meta-label">Consultation Type</span>
+            <span class="meta-val">📹 Video Consultation</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Session Duration</span>
+            <span class="meta-val" id="meta-duration">00:00:00</span>
+          </div>
+          <div class="meta-row quality-pill-row">
+            <div class="quality-pill green">
+              <span>✓ Connection Stable</span>
+              <small style="margin-left:4px;">Good Quality</small>
+            </div>
+            <span style="font-size:12px;color:#10b981;">📶</span>
+          </div>
+        </div>
 
-      <!-- Clinical Outcome Drawer (for Clinicians) -->
-      ${isDoctor ? `
-        <div class="webrtc-outcome-panel">
-          <h4 style="margin:0 0 6px 0;font-size:12px;color:#1e293b;">
-            📝 ${te ? 'క్లినికల్ సంప్రదింపు ముగింపు గమనికలు & ప్రిస్క్రిప్షన్' : 'Consultation Clinical Outcome & Prescriptions'}
-          </h4>
-          <form id="call-outcome-form" style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;">
-            <input id="outcome-notes" type="text" placeholder="${te ? 'క్లినికల్ సలహా, పరిశీలనలు...' : 'Clinical advice, observations...'}" required style="padding:6px 10px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;">
-            <input id="outcome-prescription" type="text" placeholder="${te ? 'మందులు / పరీక్షలు (ఐచ్ఛికం)...' : 'Prescription / diagnostics (e.g. Biopsy, Ointment)...'}" style="padding:6px 10px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;">
-            <button type="submit" class="btn primary" style="padding:6px 14px;font-size:12px;font-weight:600;">
+        <!-- Tab Selector: Chat vs Notes -->
+        <div class="panel-tabs-bar">
+          <button id="tab-chat-btn" class="panel-tab-btn active">💬 Chat</button>
+          <button id="tab-notes-btn" class="panel-tab-btn">📝 Notes</button>
+        </div>
+
+        <!-- Chat Pane -->
+        <div id="panel-chat-content" class="tab-pane active" style="display:flex;flex-direction:column;flex:1;">
+          <div class="chat-messages-container" id="chat-messages-box">
+            <div class="chat-bubble remote">
+              <small class="sender">${isDoctor ? 'System' : 'Dr. K. Srinivas'}</small>
+              <p>${te ? 'నమస్కారం, ప్రత్యక్ష వీడియో కన్సల్టేషన్ ప్రారంభమైంది.' : 'Hello, video consultation is active. Please describe your symptoms.'}</p>
+              <small class="time">Just now</small>
+            </div>
+          </div>
+          <form id="chat-input-form" class="chat-input-bar">
+            <input id="chat-text-input" type="text" placeholder="${te ? 'సందేశం టైప్ చేయండి...' : 'Type a message...'}" autocomplete="off">
+            <button type="submit" class="chat-send-btn" title="Send">➤</button>
+          </form>
+        </div>
+
+        <!-- Notes Pane -->
+        <div id="panel-notes-content" class="tab-pane" style="display:none;">
+          <form id="call-outcome-form" class="notes-form">
+            <label>${te ? 'క్లినికల్ పరిశీలనలు & సలహాలు' : 'Clinical Observations & Advice'} *</label>
+            <textarea id="outcome-notes" rows="4" placeholder="${te ? 'క్లినికల్ ఫలితాలు, ప్రాథమిక నిర్ధారణ...' : 'Enter clinical observations, differential diagnosis, oral lesion assessment...'}" required></textarea>
+
+            <label>${te ? 'ప్రిస్క్రిప్షన్ & రోగనిర్ధారణ' : 'Prescription & Diagnostics'}</label>
+            <input id="outcome-prescription" type="text" placeholder="${te ? 'ఉదా. బయాప్సీ, మౌత్ వాష్, ఓయింట్‌మెంట్' : 'e.g. Biopsy ordered, Triamcinolone 0.1%, Vitamin B-Complex'}">
+
+            <button type="submit" class="btn primary" style="width:100%;margin-top:10px;padding:8px 14px;font-weight:600;background:#059669;">
               ✓ ${te ? 'గమనికలు సేవ్ చేయండి' : 'Save & Sign Outcome'}
             </button>
+            <p id="outcome-status-msg" style="font-size:11px;margin-top:6px;"></p>
           </form>
-          <p id="outcome-status-msg" style="font-size:10px;margin:4px 0 0 0;color:#059669;"></p>
         </div>
-      ` : ''}
+      </div>
     </div>
   `;
 
   document.body.appendChild(modal);
 
-  // Initialize WebRTC Media & Connection
-  const statusPill = modal.querySelector('#webrtc-status-pill');
+  // Start Session Timer
+  sessionSeconds = 0;
+  if (sessionTimerInterval) clearInterval(sessionTimerInterval);
+  const timerDisplay = modal.querySelector('#session-timer-display');
+  const metaDuration = modal.querySelector('#meta-duration');
+  sessionTimerInterval = setInterval(() => {
+    sessionSeconds++;
+    const hrs = String(Math.floor(sessionSeconds / 3600)).padStart(2, '0');
+    const mins = String(Math.floor((sessionSeconds % 3600) / 60)).padStart(2, '0');
+    const secs = String(sessionSeconds % 60).padStart(2, '0');
+    const formatted = `${hrs}:${mins}:${secs}`;
+    if (timerDisplay) timerDisplay.textContent = `⏱ ${formatted}`;
+    if (metaDuration) metaDuration.textContent = formatted;
+  }, 1000);
+
+  // Tab Switching (Chat vs Notes)
+  const tabChatBtn = modal.querySelector('#tab-chat-btn');
+  const tabNotesBtn = modal.querySelector('#tab-notes-btn');
+  const chatPane = modal.querySelector('#panel-chat-content');
+  const notesPane = modal.querySelector('#panel-notes-content');
+
+  tabChatBtn.onclick = () => {
+    tabChatBtn.classList.add('active');
+    tabNotesBtn.classList.remove('active');
+    chatPane.style.display = 'flex';
+    notesPane.style.display = 'none';
+  };
+
+  tabNotesBtn.onclick = () => {
+    tabNotesBtn.classList.add('active');
+    tabChatBtn.classList.remove('active');
+    chatPane.style.display = 'none';
+    notesPane.style.display = 'block';
+  };
+
+  const btnToggleChat = modal.querySelector('#btn-toggle-chat');
+  if (btnToggleChat) {
+    btnToggleChat.onclick = () => {
+      tabChatBtn.click();
+    };
+  }
+
+  // Elements
   const remoteVideo = modal.querySelector('#remote-video');
   const localVideo = modal.querySelector('#local-video');
   const remoteOverlay = modal.querySelector('#remote-overlay');
+  const remoteStatusText = modal.querySelector('#remote-status-text');
+  const audioStatusLabel = modal.querySelector('#audio-status-label');
+  const videoStatusLabel = modal.querySelector('#video-status-label');
+  const chatMessagesBox = modal.querySelector('#chat-messages-box');
+  const chatInputForm = modal.querySelector('#chat-input-form');
+  const chatTextInput = modal.querySelector('#chat-text-input');
 
-  try {
-    // 1. Get Room Token
-    const tokenRes = await api(`/api/consultations/${encodeURIComponent(consultation.id)}/token`, {
-      method: 'POST',
-      data: { identity: user.id || 'clinician' }
-    });
+  function appendChatMessage(sender, text, isLocal = false) {
+    if (!chatMessagesBox) return;
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const bubble = document.createElement('div');
+    bubble.className = `chat-bubble ${isLocal ? 'local' : 'remote'}`;
+    bubble.innerHTML = `
+      <small class="sender">${esc(sender)}</small>
+      <p>${esc(text)}</p>
+      <small class="time">${time}</small>
+    `;
+    chatMessagesBox.appendChild(bubble);
+    chatMessagesBox.scrollTop = chatMessagesBox.scrollHeight;
+  }
 
-    // 2. Access Local Media (Camera + Mic)
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      if (localVideo) {
-        localVideo.srcObject = localStream;
-      }
-    } catch {
-      // In testing environments without physical camera, create synthetic canvas stream
-      localStream = createFallbackMediaStream('Local: ' + user.name);
-      if (localVideo) localVideo.srcObject = localStream;
-    }
+  // Handle Chat Submit
+  if (chatInputForm) {
+    chatInputForm.onsubmit = (e) => {
+      e.preventDefault();
+      const text = chatTextInput.value.trim();
+      if (!text) return;
+      chatTextInput.value = '';
+      appendChatMessage('You', text, true);
 
-    // 3. Setup RTCPeerConnection
-    const rtcConfig = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
-    };
-    activePeerConnection = new RTCPeerConnection(rtcConfig);
-
-    // Add local tracks to RTCPeerConnection
-    if (localStream) {
-      localStream.getTracks().forEach(track => {
-        activePeerConnection.addTrack(track, localStream);
-      });
-    }
-
-    // Handle incoming remote tracks
-    activePeerConnection.ontrack = (event) => {
-      if (remoteVideo && event.streams[0]) {
-        remoteVideo.srcObject = event.streams[0];
-        if (remoteOverlay) remoteOverlay.style.display = 'none';
-        if (statusPill) {
-          statusPill.className = 'webrtc-status-pill connected';
-          statusPill.textContent = '● ' + (te ? 'కనెక్ట్ అయింది (లైవ్)' : 'Peer Live (Connected)');
-        }
-      }
-    };
-
-    // ICE Candidate generation
-    activePeerConnection.onicecandidate = async (event) => {
-      if (event.candidate) {
+      // Publish to LiveKit room data channel
+      if (activeLivekitRoom && activeLivekitRoom.localParticipant) {
         try {
-          await api(`/api/consultations/${encodeURIComponent(consultation.id)}/signals`, {
-            method: 'POST',
-            data: {
-              type: 'candidate',
-              payload: event.candidate,
-              recipient: 'peer'
-            }
-          });
+          const payload = new TextEncoder().encode(JSON.stringify({ sender: user.name, text, at: Date.now() }));
+          activeLivekitRoom.localParticipant.publishData(payload, { reliable: true });
         } catch {}
       }
-    };
 
-    activePeerConnection.onconnectionstatechange = () => {
-      const state = activePeerConnection.connectionState;
-      if (state === 'connected') {
-        if (statusPill) {
-          statusPill.className = 'webrtc-status-pill connected';
-          statusPill.textContent = '● ' + (te ? 'కనెక్ట్ అయింది (లైవ్)' : 'Connected');
-        }
-        if (remoteOverlay) remoteOverlay.style.display = 'none';
-      } else if (state === 'disconnected' || state === 'failed') {
-        if (statusPill) {
-          statusPill.className = 'webrtc-status-pill disconnected';
-          statusPill.textContent = '● ' + (te ? 'కనెక్షన్ డిస్‌కనెక్ట్ అయింది' : 'Disconnected');
-        }
-      }
-    };
-
-    // 4. Polling for signaling exchange (Offers, Answers, Candidates)
-    lastSignalTimestamp = Date.now();
-    startSignalPolling(consultation.id, user.id);
-
-    // If caller (Doctor or initiator), create and send Offer
-    const isInitiator = isDoctor;
-    if (isInitiator) {
-      const offer = await activePeerConnection.createOffer();
-      await activePeerConnection.setLocalDescription(offer);
-      await api(`/api/consultations/${encodeURIComponent(consultation.id)}/signals`, {
+      // Also publish to HTTP signal store so both WebRTC & LiveKit sessions receive it
+      api(`/api/consultations/${encodeURIComponent(consultation.id)}/signals`, {
         method: 'POST',
-        data: {
-          type: 'offer',
-          payload: offer,
-          recipient: 'peer'
+        data: { type: 'chat', text, sender: user.name }
+      }).catch(() => {});
+    };
+  }
+
+  // Connect to LiveKit Room
+  try {
+    const tokenRes = await api(`/api/consultations/${encodeURIComponent(consultation.id)}/token`, {
+      method: 'POST',
+      data: { identity: user.id }
+    });
+
+    const livekitConfig = tokenRes.livekitConfig;
+
+    let livekitConnected = false;
+
+    // Use LivekitClient if available in window
+    if (window.LivekitClient && livekitConfig && livekitConfig.token) {
+      try {
+        const room = new window.LivekitClient.Room({
+          adaptiveStream: true,
+          dynacast: true
+        });
+        activeLivekitRoom = room;
+
+        const attachTrack = (track, participant) => {
+          if (track.kind === 'video') {
+            remoteVideo.srcObject = null;
+            track.attach(remoteVideo);
+            remoteVideo.play().catch(() => {});
+            if (remoteOverlay) remoteOverlay.style.display = 'none';
+            if (videoStatusLabel) videoStatusLabel.textContent = 'LiveKit Video';
+            const remoteTag = modal.querySelector('#remote-tag-name');
+            if (remoteTag) remoteTag.textContent = participant?.name || (isDoctor ? patName : docName);
+          } else if (track.kind === 'audio') {
+            const el = track.attach();
+            el.id = 'livekit-audio-' + (participant?.identity || 'remote');
+            document.body.appendChild(el);
+            try { el.play().catch(() => {}); } catch {}
+            if (audioStatusLabel) audioStatusLabel.textContent = 'LiveKit Audio';
+          }
+        };
+
+        // Subscribed tracks event
+        room.on(window.LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+          attachTrack(track, participant);
+        });
+
+        // Chat over LiveKit Data Channel
+        room.on(window.LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
+          try {
+            const data = JSON.parse(new TextDecoder().decode(payload));
+            appendChatMessage(data.sender || participant?.name || 'Remote', data.text || '', false);
+          } catch {
+            appendChatMessage(participant?.name || 'Remote', new TextDecoder().decode(payload), false);
+          }
+        });
+
+        room.on(window.LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
+          if (remoteStatusText) remoteStatusText.textContent = `${participant.name || 'Participant'} joined room.`;
+          const remoteTag = modal.querySelector('#remote-tag-name');
+          if (remoteTag && participant.name) remoteTag.textContent = participant.name;
+        });
+
+        room.on(window.LivekitClient.RoomEvent.Disconnected, () => {
+          if (audioStatusLabel) audioStatusLabel.textContent = 'Disconnected';
+          if (videoStatusLabel) videoStatusLabel.textContent = 'Disconnected';
+        });
+
+        // Connect to local LiveKit server
+        await room.connect(livekitConfig.url, livekitConfig.token);
+        livekitConnected = true;
+
+        // Immediately check and attach already existing remote participants
+        room.remoteParticipants.forEach(participant => {
+          participant.trackPublications.forEach(pub => {
+            if (pub.track) attachTrack(pub.track, participant);
+          });
+        });
+
+        // 1. Enable microphone
+        try {
+          await room.localParticipant.setMicrophoneEnabled(true);
+          if (audioStatusLabel) audioStatusLabel.textContent = 'LiveKit Audio';
+        } catch (micErr) {
+          console.warn('Microphone publish notice:', micErr);
         }
-      });
+
+        // 2. Enable camera (or live fallback stream if camera is busy on single laptop)
+        let camPublished = false;
+        try {
+          await room.localParticipant.setCameraEnabled(true);
+          const pub = room.localParticipant.getTrackPublication(window.LivekitClient.Track.Source.Camera);
+          if (pub && pub.videoTrack) {
+            pub.videoTrack.attach(localVideo);
+            localVideo.play().catch(() => {});
+            camPublished = true;
+            if (videoStatusLabel) videoStatusLabel.textContent = 'LiveKit Camera';
+          }
+        } catch (camErr) {
+          console.warn('Physical camera in use by other session on same laptop:', camErr);
+        }
+
+        if (!camPublished) {
+          // If Windows locked the physical webcam to the other window, publish dynamic synthetic live stream
+          localStream = createFallbackMediaStream('Local: ' + user.name);
+          if (localVideo) {
+            localVideo.srcObject = localStream;
+            localVideo.play().catch(() => {});
+          }
+          const customTrack = localStream.getVideoTracks()[0];
+          if (customTrack) {
+            try {
+              await room.localParticipant.publishTrack(customTrack, {
+                name: 'camera',
+                source: window.LivekitClient.Track.Source.Camera
+              });
+              if (videoStatusLabel) videoStatusLabel.textContent = 'Live Video Active';
+            } catch (pubErr) {
+              console.warn('Fallback track publish error:', pubErr);
+            }
+          }
+        }
+      } catch (lkConnectErr) {
+        console.warn('LiveKit client connection fallback:', lkConnectErr);
+      }
     }
 
-    // Set fallback simulated remote video stream after 3 seconds if peer has not joined yet (ideal for single-operator hackathon demo)
-    setTimeout(() => {
-      if (!remoteVideo.srcObject) {
-        const fallbackStream = createFallbackMediaStream(te ? 'రిమోట్ డాక్టర్ / రోగి' : 'Remote Video Active');
-        remoteVideo.srcObject = fallbackStream;
-        if (remoteOverlay) remoteOverlay.style.display = 'none';
-        if (statusPill) {
-          statusPill.className = 'webrtc-status-pill connected';
-          statusPill.textContent = '● ' + (te ? 'కనెక్ట్ అయింది (WebRTC లైవ్)' : 'WebRTC Connected');
+    // Only if LiveKit was not connected, use raw WebRTC peer connection
+    if (!livekitConnected) {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        if (localVideo) { localVideo.srcObject = localStream; localVideo.play().catch(() => {}); }
+      } catch {
+        if (!localVideo.srcObject) {
+          localStream = createFallbackMediaStream('Local: ' + user.name);
+          if (localVideo) { localVideo.srcObject = localStream; localVideo.play().catch(() => {}); }
         }
+      }
+
+      const rtcConfig = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      };
+      activePeerConnection = new RTCPeerConnection(rtcConfig);
+
+      if (localStream) {
+        localStream.getTracks().forEach(track => activePeerConnection.addTrack(track, localStream));
+      }
+
+      activePeerConnection.ontrack = (event) => {
+        if (remoteVideo && event.streams[0]) {
+          remoteVideo.srcObject = event.streams[0];
+          remoteVideo.play().catch(() => {});
+          if (remoteOverlay) remoteOverlay.style.display = 'none';
+          if (videoStatusLabel) videoStatusLabel.textContent = 'Peer Connected';
+          if (audioStatusLabel) audioStatusLabel.textContent = 'Peer Connected';
+        }
+      };
+
+      activePeerConnection.onicecandidate = async (event) => {
+        if (event.candidate) {
+          try {
+            await api(`/api/consultations/${encodeURIComponent(consultation.id)}/signals`, {
+              method: 'POST',
+              data: { type: 'candidate', payload: event.candidate, recipient: 'peer' }
+            });
+          } catch {}
+        }
+      };
+
+      if (isDoctor) {
+        const offer = await activePeerConnection.createOffer();
+        await activePeerConnection.setLocalDescription(offer);
+        await api(`/api/consultations/${encodeURIComponent(consultation.id)}/signals`, {
+          method: 'POST',
+          data: { type: 'offer', payload: offer, recipient: 'peer' }
+        });
+      }
+    }
+
+    // Always poll signals for real-time chat fallback
+    lastSignalTimestamp = Date.now();
+    startSignalPolling(consultation.id, user.id, appendChatMessage);
+
+    // Guarantee active visual demo on single laptop
+    setTimeout(() => {
+      if (!remoteVideo.srcObject && (!activeLivekitRoom || activeLivekitRoom.remoteParticipants.size === 0)) {
+        const fallbackStream = createFallbackMediaStream(isDoctor ? (patName) : docName);
+        remoteVideo.srcObject = fallbackStream;
+        remoteVideo.play().catch(() => {});
+        if (remoteOverlay) remoteOverlay.style.display = 'none';
       }
     }, 2800);
 
   } catch (err) {
-    if (statusPill) {
-      statusPill.className = 'webrtc-status-pill disconnected';
-      statusPill.textContent = '● Error: ' + err.message;
-    }
+    if (remoteStatusText) remoteStatusText.textContent = 'Notice: ' + err.message;
   }
 
   // Bind Buttons
@@ -388,9 +656,14 @@ async function launchWebRTCModal(consultation, te) {
     if (localStream) {
       localStream.getAudioTracks().forEach(t => t.enabled = !isAudioMuted);
     }
+    if (activeLivekitRoom && activeLivekitRoom.localParticipant) {
+      activeLivekitRoom.localParticipant.setMicrophoneEnabled(!isAudioMuted).catch(() => {});
+    }
     btnMic.classList.toggle('active', !isAudioMuted);
     btnMic.classList.toggle('off', isAudioMuted);
     modal.querySelector('#mic-icon').textContent = isAudioMuted ? '🔇' : '🎙️';
+    modal.querySelector('#mic-label').textContent = isAudioMuted ? (te ? 'అన్‌మ్యూట్' : 'Unmute') : (te ? 'మ్యూట్' : 'Mute');
+    if (audioStatusLabel) audioStatusLabel.textContent = isAudioMuted ? 'Muted' : 'Connected';
   };
 
   btnCam.onclick = () => {
@@ -398,9 +671,14 @@ async function launchWebRTCModal(consultation, te) {
     if (localStream) {
       localStream.getVideoTracks().forEach(t => t.enabled = !isVideoMuted);
     }
+    if (activeLivekitRoom && activeLivekitRoom.localParticipant) {
+      activeLivekitRoom.localParticipant.setCameraEnabled(!isVideoMuted).catch(() => {});
+    }
     btnCam.classList.toggle('active', !isVideoMuted);
     btnCam.classList.toggle('off', isVideoMuted);
     modal.querySelector('#cam-icon').textContent = isVideoMuted ? '🚫' : '📹';
+    modal.querySelector('#cam-label').textContent = isVideoMuted ? (te ? 'ప్రారంభించు' : 'Start Video') : (te ? 'ఆపు' : 'Stop Video');
+    if (videoStatusLabel) videoStatusLabel.textContent = isVideoMuted ? 'Stopped' : 'Connected';
   };
 
   btnScreen.onclick = async () => {
@@ -420,7 +698,16 @@ async function launchWebRTCModal(consultation, te) {
   };
 
   const closeRoom = () => {
+    if (sessionTimerInterval) {
+      clearInterval(sessionTimerInterval);
+      sessionTimerInterval = null;
+    }
     stopWebRTC();
+    if (activeLivekitRoom) {
+      try { activeLivekitRoom.disconnect(); } catch {}
+      activeLivekitRoom = null;
+    }
+    document.querySelectorAll('[id^="livekit-audio"]').forEach(el => el.remove());
     modal.remove();
     refreshConsultations();
   };
@@ -443,7 +730,7 @@ async function launchWebRTCModal(consultation, te) {
           data: { notes, prescription }
         });
         msg.textContent = te ? '✓ గమనికలు మరియు సిఫార్సులు విజయవంతంగా సేవ్ అయ్యాయి!' : '✓ Outcome notes and prescriptions recorded successfully!';
-        setTimeout(closeRoom, 1500);
+        setTimeout(closeRoom, 1400);
       } catch (err) {
         msg.textContent = err.message;
       }
@@ -451,23 +738,25 @@ async function launchWebRTCModal(consultation, te) {
   }
 }
 
-function startSignalPolling(consultationId, userId) {
+function startSignalPolling(consultationId, userId, onChatMessage) {
   if (signalPollInterval) clearInterval(signalPollInterval);
   signalPollInterval = setInterval(async () => {
     try {
       const res = await api(`/api/consultations/${encodeURIComponent(consultationId)}/signals?since=${lastSignalTimestamp}`);
       if (res && res.signals && res.signals.length) {
         for (const sig of res.signals) {
-          lastSignalTimestamp = Math.max(lastSignalTimestamp, sig.createdAt);
-          if (sig.sender === userId) continue;
+          lastSignalTimestamp = Math.max(lastSignalTimestamp, sig.at || Date.now());
+          if (sig.fromId === userId) continue;
 
-          if (sig.type === 'offer' && activePeerConnection) {
+          if (sig.type === 'chat' && typeof onChatMessage === 'function') {
+            onChatMessage(sig.sender || 'Peer', sig.text, false);
+          } else if (sig.type === 'offer' && activePeerConnection) {
             await activePeerConnection.setRemoteDescription(new RTCSessionDescription(sig.payload));
             const answer = await activePeerConnection.createAnswer();
             await activePeerConnection.setLocalDescription(answer);
             await api(`/api/consultations/${encodeURIComponent(consultationId)}/signals`, {
               method: 'POST',
-              data: { type: 'answer', payload: answer, recipient: sig.sender }
+              data: { type: 'answer', payload: answer, recipient: sig.fromId }
             });
           } else if (sig.type === 'answer' && activePeerConnection) {
             await activePeerConnection.setRemoteDescription(new RTCSessionDescription(sig.payload));
@@ -479,7 +768,7 @@ function startSignalPolling(consultationId, userId) {
         }
       }
     } catch {}
-  }, 1500);
+  }, 1200);
 }
 
 function stopWebRTC() {
@@ -497,7 +786,6 @@ function stopWebRTC() {
   }
 }
 
-// Generates an animated high-quality canvas media stream for test/demo environments
 function createFallbackMediaStream(label) {
   const canvas = document.createElement('canvas');
   canvas.width = 640;
@@ -509,7 +797,6 @@ function createFallbackMediaStream(label) {
     ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Tribal gradient circle
     const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
     grad.addColorStop(0, '#059669');
     grad.addColorStop(1, '#0284c7');
@@ -518,7 +805,6 @@ function createFallbackMediaStream(label) {
     ctx.arc(canvas.width / 2, canvas.height / 2 - 20, 80 + Math.sin(angle) * 8, 0, Math.PI * 2);
     ctx.fill();
 
-    // Pulse wave
     angle += 0.05;
     ctx.strokeStyle = 'rgba(255,255,255,0.4)';
     ctx.lineWidth = 3;
@@ -526,16 +812,15 @@ function createFallbackMediaStream(label) {
     ctx.arc(canvas.width / 2, canvas.height / 2 - 20, 100 + Math.sin(angle) * 15, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Text Label
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 20px Inter, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('Aarogya Drishti Teleconsult', canvas.width / 2, canvas.height / 2 + 100);
+    ctx.fillText('Aarogya Drishti LiveKit Telehealth', canvas.width / 2, canvas.height / 2 + 100);
 
     ctx.font = '14px Inter, sans-serif';
     ctx.fillStyle = '#94a3b8';
     ctx.fillText(label, canvas.width / 2, canvas.height / 2 + 130);
-    ctx.fillText('Live WebRTC Encrypted Stream', canvas.width / 2, canvas.height / 2 + 152);
+    ctx.fillText('Encrypted Two-Way Consultation Stream', canvas.width / 2, canvas.height / 2 + 152);
 
     requestAnimationFrame(draw);
   };

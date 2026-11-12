@@ -2,7 +2,7 @@ import http from 'node:http';
 import {isIPv4} from 'node:net';
 import {readFile,realpath} from 'node:fs/promises';
 import {resolve,extname,sep,basename} from 'node:path';
-import {randomBytes,timingSafeEqual,randomUUID,scrypt} from 'node:crypto';
+import {randomBytes,timingSafeEqual,randomUUID,scrypt,createHmac} from 'node:crypto';
 import {openStore,digest,passwordMatches,passwordHash,transaction,audit,patientFrom,putEvent,recordConsent,withdrawConsent,isConsentActive,getPatientConsent} from './store.mjs';
 import {runResearchAI} from './research-ai.mjs';
 import {voiceIntake} from './voice-intake.mjs';
@@ -328,9 +328,56 @@ export async function startServer(options={}){
     if(consultAcceptMatch&&method==='POST'){
      allowed(s,['doctor','specialist','hospital','navigator']);const cId=consultAcceptMatch[1];const consult=db.prepare('SELECT * FROM consultations WHERE id=?').get(cId);if(!consult)fail(404,'Consultation not found.');const roomUrl='https://meet.jit.si/Drishti-'+cId;db.prepare("UPDATE consultations SET status='ready', room_url=? WHERE id=?").run(roomUrl,cId);return json(res,200,{ok:true,consultation:{...consult,status:'ready',roomUrl}});
     }
+function createLiveKitToken(apiKey,apiSecret,identity,name,roomName,metadata={}){
+  const header={alg:'HS256',typ:'JWT'};
+  const now=Math.floor(Date.now()/1000);
+  const payload={
+    exp:now+3600*6,
+    nbf:now-5,
+    iss:apiKey,
+    sub:identity,
+    name:name,
+    metadata:typeof metadata==='string'?metadata:JSON.stringify(metadata),
+    video:{
+      room:roomName,
+      roomJoin:true,
+      canPublish:true,
+      canSubscribe:true,
+      canPublishData:true
+    }
+  };
+  const b64u=str=>Buffer.from(str).toString('base64url');
+  const tokenData=b64u(JSON.stringify(header))+'.'+b64u(JSON.stringify(payload));
+  const signature=createHmac('sha256',apiSecret).update(tokenData).digest('base64url');
+  return tokenData+'.'+signature;
+}
+
     const consultTokenMatch=path.match(/^\/api\/consultations\/([A-Za-z0-9-]+)\/token$/);
     if(consultTokenMatch&&method==='POST'){
-     const cId=consultTokenMatch[1];const consult=db.prepare('SELECT * FROM consultations WHERE id=?').get(cId);if(!consult)fail(404,'Consultation not found.');const roomKey='room_'+cId;if(!videoRooms.has(roomKey)){videoRooms.set(roomKey,{participants:new Map(),signals:[]});}const room=videoRooms.get(roomKey);room.participants.set(s.id,{id:s.id,name:s.name,role:s.role,joinedAt:Date.now()});const token=digest(`${s.id}:${cId}:${Date.now()}`);return json(res,200,{ok:true,roomToken:token,roomId:cId,participant:{id:s.id,name:s.name,role:s.role},participants:Array.from(room.participants.values()),livekitConfig:{enabled:Boolean(process.env.LIVEKIT_URL),url:process.env.LIVEKIT_URL||'wss://livekit.drishti.local',token}});
+     const cId=consultTokenMatch[1];
+     const consult=db.prepare('SELECT * FROM consultations WHERE id=?').get(cId);
+     if(!consult)fail(404,'Consultation not found.');
+     const roomName='drishti-'+cId;
+     const roomKey='room_'+cId;
+     if(!videoRooms.has(roomKey)){videoRooms.set(roomKey,{participants:new Map(),signals:[]});}
+     const room=videoRooms.get(roomKey);
+     room.participants.set(s.id,{id:s.id,name:s.name,role:s.role,joinedAt:Date.now()});
+     const livekitToken=createLiveKitToken(config.livekit.apiKey,config.livekit.apiSecret,s.id,s.name,roomName,{role:s.role,patientId:consult.patient_id});
+     audit(db,s,'consultation.joined',consult.patient_id,{consultationId:cId,roomName});
+     return json(res,200,{
+       ok:true,
+       roomToken:livekitToken,
+       roomId:cId,
+       roomName,
+       participant:{id:s.id,name:s.name,role:s.role},
+       participants:Array.from(room.participants.values()),
+       livekitConfig:{
+         enabled:true,
+         url:config.livekit.url,
+         token:livekitToken,
+         roomName
+       }
+     });
     }
     const consultSignalMatch=path.match(/^\/api\/consultations\/([A-Za-z0-9-]+)\/signals$/);
     if(consultSignalMatch&&method==='POST'){

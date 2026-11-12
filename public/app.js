@@ -4,7 +4,7 @@ import {teamMarkup,mountTeam} from './team.js';
 import {icon} from './icons.js';
 import {mountAssistant,openIntake,resetIntake,hideAssistant} from './assistant.js';
 import {isAndroid,configureServer,mountNativeConnection} from './platform.js';
-import {consultationMarkup,mountConsultations} from './consultations.js';
+import {consultationMarkup,mountConsultations,launchWebRTCModal} from './consultations.js';
 import {voiceMarkup,mountVoice} from './voice-intake.js';
 import {qualityMetrics,overdue} from './domain.js';
 import {
@@ -224,6 +224,15 @@ function shell(){
               <strong>${lang==='te'?'అపాయింట్‌మెంట్లు':'Appointments'}</strong>
               <small>${lang==='te'?'రెఫరల్ ఫాలో-అప్':'Referrals Queue'}</small>
             </div>
+          </button>
+
+          <button class="sidebar-nav-btn ${view==='teleconsult'?'active':''}" data-nav="teleconsult">
+            <span class="sidebar-nav-icon">${icon('camera', 20)}</span>
+            <div class="sidebar-nav-text">
+              <strong>${lang==='te'?'వీడియో సంప్రదింపు':'Video Consultation'}</strong>
+              <small>${lang==='te'?'ప్రత్యక్ష టెలిహెల్త్':'Live Telehealth'}</small>
+            </div>
+            <span class="sidebar-nav-badge" style="background:#059669;color:#fff;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700;">Live</span>
           </button>
 
           ${['admin','doctor','specialist'].includes(role)?`
@@ -793,6 +802,9 @@ function renderReferralCards(list,isTe){
         ${r.notes?`<p style="font-size:12px;margin:8px 0;color:#4a5c6d;"><em>${esc(r.notes)}</em></p>`:''}
         <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center;">
           <span class="mini" style="margin-right:6px;">${isTe?'చర్య:':'Action:'}</span>
+          <button class="btn primary" style="padding:6px 14px;font-size:11px;background:#059669;color:#fff;display:inline-flex;align-items:center;gap:6px;font-weight:600;" data-start-video-consult="${esc(r.patientId||p.id)}">
+            <span>📹</span> ${isTe?'వీడియో సంప్రదింపు':'Video Consult'}
+          </button>
           ${r.status==='referred'?`<button class="btn" style="padding:6px 12px;font-size:11px;" data-ref-action="${esc(r.id)}" data-to-status="scheduled">📅 ${isTe?'షెడ్యూల్ చేయండి':'Schedule'}</button><button class="btn" style="padding:6px 12px;font-size:11px;" data-ref-action="${esc(r.id)}" data-to-status="attended">🏥 ${isTe?'హాజరయ్యారు':'Attended'}</button>`:''}
           ${r.status==='scheduled'?`<button class="btn" style="padding:6px 12px;font-size:11px;" data-ref-action="${esc(r.id)}" data-to-status="attended">🏥 ${isTe?'హాజరయ్యారు':'Mark Attended'}</button>`:''}
           ${r.status==='attended'?`<button class="btn primary" style="padding:6px 12px;font-size:11px;" data-ref-action="${esc(r.id)}" data-to-status="completed">✓ ${isTe?'చికిత్స పూర్తయింది':'Mark Completed'}</button>`:''}
@@ -832,6 +844,73 @@ function bindReferralsQueue(){
   };
   if(searchEl)searchEl.oninput=filterQueue;
   if(statusEl)statusEl.onchange=filterQueue;
+}
+
+// -------------------------------------------------------------
+// LIVE TELECONSULTATION & VIDEO REFERRAL HUB
+// -------------------------------------------------------------
+function teleconsultView(){
+  const isTe = lang === 'te';
+  const isDoctor = role === 'doctor' || role === 'specialist';
+  const activePatients = patients.filter(p => ['referred', 'screened', 'reviewed', 'diagnostics', 'treatment'].includes(p.stage));
+
+  return intro(
+    isTe ? 'వీడియో సంప్రదింపు & లైవ్ టెలిహెల్త్' : 'Live Video Teleconsultation Hub',
+    isTe ? 'వైద్యులు మరియు ఆశా కార్యకర్తల మధ్య ప్రత్యక్ష ఎన్‌క్రిప్టెడ్ వీడియో సంప్రదింపు.' : 'Direct doctor-patient live encrypted teleconsultation room for rural care.'
+  ) + `
+  <div class="stats" style="margin-bottom:20px;">
+    <div class="stat">
+      <div class="stat-top">${isTe ? 'వీడియో నెట్‌వర్క్' : 'Video Network'}<span class="stat-icon">🟢</span></div>
+      <strong style="color:#059669;">Active</strong>
+      <small>${isTe ? 'లైవ్ వీడియో సిద్ధంగా ఉంది' : 'Local WebRTC / LiveKit Ready'}</small>
+    </div>
+    <div class="stat">
+      <div class="stat-top">${isTe ? 'క్రియాశీల రోగులు' : 'Eligible Patients'}<span class="stat-icon">👥</span></div>
+      <strong>${String(activePatients.length).padStart(2, '0')}</strong>
+      <small>${isTe ? 'సంప్రదింపుకు సిద్ధంగా ఉన్నారు' : 'Ready for Video Call'}</small>
+    </div>
+    <div class="stat">
+      <div class="stat-top">${isTe ? 'మీ పాత్ర' : 'Logged-in As'}<span class="stat-icon">🛡️</span></div>
+      <strong style="font-size:14px;">${isDoctor ? 'Medical Officer' : 'Health Worker (ASHA)'}</strong>
+      <small>${currentIdentity()?.user?.name || 'User'}</small>
+    </div>
+  </div>
+
+  <section class="card" style="margin-top:16px;">
+    <div class="card-head" style="display:flex;justify-content:space-between;align-items:center;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="stat-icon">${icon('camera', 20)}</span>
+        <div>
+          <h3 style="margin:0;">${isTe ? 'రోగుల ప్రత్యక్ష సంప్రదింపు జాబితా' : 'Direct Patient Video Consultations'}</h3>
+          <small class="sub">${isTe ? 'ఒకే క్లిక్‌తో డాక్టర్ మరియు రోగి మధ్య కాల్ ప్రారంభించండి' : 'One-click instant encrypted consultation room'}</small>
+        </div>
+      </div>
+      <span class="pill green">● Two-Way Video & Audio</span>
+    </div>
+
+    ${!activePatients.length ? `<div class="empty">${t('empty')}</div>` : `
+    <div style="display:grid;gap:12px;margin-top:16px;">
+      ${activePatients.map(p => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:rgba(255,255,255,0.85);border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.03);">
+          <div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <strong style="font-size:15px;">${esc(p.name)}</strong>
+              <span class="pill">${esc(p.id)}</span>
+              <span class="pill ${p.stage === 'referred' ? 'amber' : 'green'}">${esc(p.stage)}</span>
+            </div>
+            <p class="sub" style="margin-top:4px;">
+              ${p.age ? p.age + ' ' + (isTe ? 'సం.' : 'yrs') + ' · ' : ''}${esc(p.village || 'ITDA Paderu')}
+              ${p.phone ? ` · 📞 ${esc(p.phone)}` : ''}
+              ${p.facility ? ` · 🏥 ${esc(p.facility)}` : ''}
+            </p>
+          </div>
+          <button class="btn primary" style="padding:8px 16px;font-size:12px;font-weight:600;background:#059669;display:flex;align-items:center;gap:6px;" data-start-video-consult="${esc(p.id)}">
+            <span>📹</span> ${isDoctor ? (isTe ? 'కాల్ ప్రారంభించండి' : 'Start Doctor Call') : (isTe ? 'డాక్టర్‌ను పిలవండి' : 'Call Doctor')}
+          </button>
+        </div>
+      `).join('')}
+    </div>`}
+  </section>`;
 }
 
 // -------------------------------------------------------------
@@ -1406,6 +1485,32 @@ function bindCommon(){
   document.querySelectorAll('[data-new]').forEach(b=>b.onclick=()=>navigate('screening'));
   document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>navigate(b.dataset.go));
   document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>navigate('record',b.dataset.open));
+  document.querySelectorAll('[data-start-video-consult]').forEach(b => {
+    b.onclick = async () => {
+      const pId = b.dataset.startVideoConsult;
+      b.disabled = true;
+      try {
+        const p = patients.find(pt => pt.id === pId) || { id: pId, name: 'Patient' };
+        let cRes = await api(`/api/consultations?patientId=${encodeURIComponent(pId)}`).catch(() => ({ consultations: [] }));
+        let consult = cRes.consultations && cRes.consultations[0];
+        if (!consult) {
+          const now = new Date();
+          now.setMinutes(now.getMinutes() + 10);
+          const createRes = await api('/api/consultations', {
+            method: 'POST',
+            data: { patientId: pId, scheduledAt: now.toISOString() }
+          });
+          consult = createRes.consultation;
+        }
+        toast(lang === 'te' ? 'వీడియో సంప్రదింపు ప్రారంభమవుతోంది...' : 'Launching Live Video Room...');
+        await launchWebRTCModal(consult, lang === 'te', p);
+      } catch (err) {
+        toast(err.message);
+      } finally {
+        b.disabled = false;
+      }
+    };
+  });
 }
 
 function render(){
@@ -1419,6 +1524,7 @@ function render(){
     patients:registry,
     reviews:registry,
     referrals:referralsQueue,
+    teleconsult:teleconsultView,
     record,
     district,
     settings,

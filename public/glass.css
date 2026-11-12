@@ -2938,3 +2938,495 @@ a.native-connect{text-decoration:none}.top-actions svg{vertical-align:middle}.si
   }
 }
 
+/* ==========================================================================
+   OFFICIAL TELEHEALTH VIDEO CONSULTATION DESIGN (LIVEKIT REFERENCE)
+   ========================================================================== */
+.telehealth-room-layout {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  width: min(1200px, 98vw);
+  height: min(720px, 92vh);
+  background: #0f172a;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.telehealth-video-stage {
+  position: relative;
+  background: #000000;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-top-badges {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 15;
+  pointer-events: none;
+}
+
+.badge-live {
+  background: #10b981;
+  color: #ffffff;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
+}
+
+.badge-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffffff;
+  animation: pulse 1.2s infinite;
+}
+
+.badge-timer {
+  background: rgba(15, 23, 42, 0.75);
+  color: #ffffff;
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.telehealth-remote-video-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.telehealth-remote-video-container video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.remote-participant-tag {
+  position: absolute;
+  bottom: 85px;
+  left: 16px;
+  background: rgba(15, 23, 42, 0.78);
+  backdrop-filter: blur(8px);
+  color: #ffffff;
+  padding: 6px 14px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 10;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.remote-participant-tag strong {
+  display: block;
+  font-size: 12px;
+}
+
+.remote-participant-tag small {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.telehealth-pip-container {
+  position: absolute;
+  bottom: 85px;
+  right: 16px;
+  width: 190px;
+  height: 140px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 2px solid #ffffff;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+  background: #1e293b;
+  z-index: 12;
+}
+
+.telehealth-pip-container video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.pip-tag {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #ffffff;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.telehealth-bottom-bar {
+  position: absolute;
+  bottom: 14px;
+  left: 16px;
+  right: 16px;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 8px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 20;
+}
+
+.bar-status-left, .bar-status-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #10b981;
+  font-size: 11px;
+}
+
+.bar-status-left strong, .bar-status-right strong {
+  display: block;
+  font-size: 11px;
+}
+
+.bar-status-left small, .bar-status-right small {
+  font-size: 9px;
+  color: #94a3b8;
+}
+
+.bar-controls-center {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bar-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 6px 12px;
+  color: #ffffff;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  transition: all 0.2s;
+}
+
+.bar-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.bar-btn.active {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #10b981;
+}
+
+.bar-btn.off {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+  color: #fca5a5;
+}
+
+.bar-btn.end-call {
+  background: #ef4444;
+  border: none;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
+.bar-btn.end-call .btn-label {
+  display: none;
+}
+
+.bar-btn.end-call .btn-icon {
+  font-size: 18px;
+}
+
+.telehealth-info-panel {
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 16px;
+  color: #1e293b;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 10px;
+}
+
+.close-x-btn {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: #64748b;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.close-x-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.info-section-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 9px 12px;
+  margin-bottom: 8px;
+}
+
+.section-sub-label {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 700;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.person-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.person-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.person-avatar.doctor {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.person-avatar.patient {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.person-role {
+  font-size: 10.5px;
+  color: #64748b;
+  display: block;
+}
+
+.status-indicator.online {
+  color: #10b981;
+  font-size: 9.5px;
+  font-weight: 700;
+  display: block;
+  margin-top: 2px;
+}
+
+.meta-details-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 9px 12px;
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+
+.meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.meta-label {
+  color: #64748b;
+  font-size: 10.5px;
+}
+
+.meta-val {
+  font-weight: 600;
+  color: #1e293b;
+  font-size: 11px;
+}
+
+.quality-pill-row {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.quality-pill {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+  border-radius: 20px;
+  padding: 2px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 10px;
+}
+
+.panel-tabs-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 6px;
+}
+
+.panel-tab-btn {
+  flex: 1;
+  padding: 6px 8px;
+  border: none;
+  background: #f1f5f9;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #475569;
+}
+
+.panel-tab-btn.active {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.chat-messages-container {
+  height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 8px;
+}
+
+.chat-bubble {
+  padding: 6px 10px;
+  border-radius: 10px;
+  max-width: 85%;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.chat-bubble.local {
+  background: #2563eb;
+  color: #ffffff;
+  align-self: flex-end;
+  border-bottom-right-radius: 2px;
+}
+
+.chat-bubble.remote {
+  background: #e2e8f0;
+  color: #1e293b;
+  align-self: flex-start;
+  border-bottom-left-radius: 2px;
+}
+
+.chat-bubble .sender {
+  font-size: 9px;
+  opacity: 0.8;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.chat-bubble p {
+  margin: 0;
+}
+
+.chat-bubble .time {
+  font-size: 8.5px;
+  opacity: 0.7;
+  display: block;
+  text-align: right;
+  margin-top: 2px;
+}
+
+.chat-input-bar {
+  display: flex;
+  gap: 6px;
+}
+
+.chat-input-bar input {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.chat-send-btn {
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 0 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.notes-form label {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #475569;
+  display: block;
+  margin-top: 4px;
+}
+
+.notes-form textarea, .notes-form input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 11px;
+  margin-top: 3px;
+  margin-bottom: 6px;
+  box-sizing: border-box;
+}
+

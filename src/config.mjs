@@ -97,6 +97,11 @@ export function loadConfig(overrides = {}, env = process.env) {
   const bolnaAgentEn = overrides.bolnaAgentEn || env.BOLNA_AGENT_EN || '';
   const voiceDailyLimit = parseInteger(overrides.voiceDailyLimit ?? env.VOICE_DAILY_LIMIT, 5, 1, 100, 'VOICE_DAILY_LIMIT');
 
+  // LiveKit WebRTC Configuration
+  const livekitUrl = overrides.livekitUrl || env.LIVEKIT_URL || 'ws://127.0.0.1:7880';
+  const livekitApiKey = overrides.livekitApiKey || env.LIVEKIT_API_KEY || 'devkey';
+  const livekitApiSecret = overrides.livekitApiSecret || env.LIVEKIT_API_SECRET || 'secret';
+
   return Object.freeze({
     server: {
       host,
@@ -129,6 +134,11 @@ export function loadConfig(overrides = {}, env = process.env) {
       bolnaAgentTe,
       bolnaAgentEn,
       dailyLimit: voiceDailyLimit,
+    },
+    livekit: {
+      url: livekitUrl,
+      apiKey: livekitApiKey,
+      apiSecret: livekitApiSecret,
     },
   });
 }
