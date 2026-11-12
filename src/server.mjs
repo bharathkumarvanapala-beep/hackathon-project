@@ -13,6 +13,7 @@ import {parseDataUrl,storePatientImage,getImageRecord,loadImageBuffer,resolvePho
 import {assessImageQuality} from './image-quality.mjs';
 import {getDefaultAIRegistry} from './ai-adapter.mjs';
 import {ITDA_FACILITIES,DENTAL_QUADRANTS,REFERRAL_PRIORITIES,REFERRAL_STATUSES,isValidReferralTransition,isReferralOverdue} from './facilities.mjs';
+import {buildDashboardStats} from './dashboard-stats.mjs';
 const stages=['screened','reviewed','referred','diagnostics','treatment','closed'];
 const types={'.ttf':'font/ttf','.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.json':'application/json','.webmanifest':'application/manifest+json','.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png','.webp':'image/webp'};
 class ApiError extends Error{constructor(status,message){super(message);this.status=status;}}
@@ -129,6 +130,25 @@ export async function startServer(options={}){
       try{candidateFindings=JSON.parse(r.candidate_findings||'[]');}catch{}
       try{warnings=JSON.parse(r.warnings||'[]');}catch{}
       return {id:r.id,patientId:r.patient_id,imageId:r.image_id,modelName:r.model_name,modelVersion:r.model_version,modelClass:r.model_class,candidateFindings,warnings,status:r.status,requestedBy:r.requested_by,requesterName:r.requester_name,processedAt:r.processed_at};
+     });
+     return json(res,200,{analyses});
+    }
+    if(path==='/api/ai/analyses'&&method==='GET'){
+     allowed(s,['admin','doctor','specialist','navigator','hospital','worker']);
+     const rows=db.prepare(`
+       SELECT a.*, u.name AS requester_name, p.body AS patient_body
+       FROM ai_analyses a
+       LEFT JOIN users u ON u.id=a.requested_by
+       LEFT JOIN patients p ON p.id=a.patient_id
+       ORDER BY a.processed_at DESC
+       LIMIT 100
+     `).all();
+     const analyses=rows.map(r=>{
+      let candidateFindings=[];let warnings=[];let patientName=r.patient_id;let village='';let stage='';
+      try{candidateFindings=JSON.parse(r.candidate_findings||'[]');}catch{}
+      try{warnings=JSON.parse(r.warnings||'[]');}catch{}
+      try{const pb=JSON.parse(r.patient_body||'{}');patientName=pb.name||r.patient_id;village=pb.village||'';stage=pb.stage||'';}catch{}
+      return {id:r.id,patientId:r.patient_id,patientName,village,stage,imageId:r.image_id,modelName:r.model_name,modelVersion:r.model_version,modelClass:r.model_class,candidateFindings,warnings,status:r.status,requestedBy:r.requested_by,requesterName:r.requester_name,processedAt:r.processed_at};
      });
      return json(res,200,{analyses});
     }
@@ -319,7 +339,19 @@ export async function startServer(options={}){
      return json(res,200,{ok:true,referral:{...updatedRef,isOverdue:isReferralOverdue(updatedRef.due_date,updatedRef.status)},patient:updatedPatient});
     }
     if(path==='/api/consultations'&&method==='GET'){
-     const patientId=new URL(req.url,'http://localhost').searchParams.get('patientId');if(!patientId||!/^AD-[A-Za-z0-9-]+$/.test(patientId))fail(400,'Patient ID required.');return json(res,200,{consultations:db.prepare('SELECT id,patient_id AS patientId,scheduled_at AS scheduledAt,status,room_url AS roomUrl FROM consultations WHERE patient_id=? ORDER BY scheduled_at DESC').all(patientId)});
+     const patientId=new URL(req.url,'http://localhost').searchParams.get('patientId');
+     if(patientId!==null){
+      if(!/^AD-[A-Za-z0-9-]+$/.test(patientId))fail(400,'Patient ID required.');
+      return json(res,200,{consultations:db.prepare('SELECT id,patient_id AS patientId,scheduled_at AS scheduledAt,status,room_url AS roomUrl FROM consultations WHERE patient_id=? ORDER BY scheduled_at DESC').all(patientId)});
+     }
+     allowed(s,['admin','doctor','specialist','navigator','hospital']);
+     const rows=db.prepare('SELECT c.id,c.patient_id AS patientId,c.scheduled_at AS scheduledAt,c.status,c.room_url AS roomUrl,p.body AS patientBody,u.name AS creatorName FROM consultations c LEFT JOIN patients p ON p.id=c.patient_id LEFT JOIN users u ON u.id=c.created_by ORDER BY c.scheduled_at DESC LIMIT 100').all();
+     const consultations=rows.map(r=>{
+      let patientName=r.patientId,village='';
+      try{const pb=JSON.parse(r.patientBody||'{}');patientName=pb.name||r.patientId;village=pb.village||'';}catch{}
+      return {id:r.id,patientId:r.patientId,patientName,village,scheduledAt:r.scheduledAt,status:r.status,roomUrl:r.roomUrl,creatorName:r.creatorName||''};
+     });
+     return json(res,200,{consultations});
     }
     if(path==='/api/consultations/active'&&method==='GET'){
      if(!latestActiveConsultation){
@@ -421,7 +453,9 @@ function createLiveKitToken(apiKey,apiSecret,identity,name,roomName,metadata={})
      allowed(s,['hospital','navigator','doctor','specialist','admin']);const input=await body(req,4096);const patientId=string(input.patientId,80,true);if(!db.prepare('SELECT id FROM patients WHERE id=?').get(patientId))fail(404,'Patient not found.');const contactStatus=input.contactStatus&&['pending','contacted','unreachable','visit_scheduled'].includes(input.contactStatus)?input.contactStatus:'contacted';const barrier=string(input.barrierIdentified||'',500);const notes=string(input.notes||'',2000);const attendance=input.attendanceConfirmed?1:0;const followup=input.followupDue?validateDate(input.followupDue):'';const id=randomUUID(),now=new Date().toISOString();db.prepare('INSERT INTO patient_navigation(id,patient_id,referral_id,navigator_id,contact_status,barrier_identified,attendance_confirmed,notes,followup_due,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,patientId,input.referralId||null,s.id,contactStatus,barrier,attendance,notes,followup,now);audit(db,s,'navigation.recorded',patientId,{navigationId:id,contactStatus});return json(res,201,{ok:true,navigation:{id,patientId,contactStatus,notes,updatedAt:now}});
     }
     if(path==='/api/dashboard/stats'&&method==='GET'){
-     allowed(s,['admin','doctor','specialist','navigator','hospital']);const totalPatients=db.prepare('SELECT count(*) AS c FROM patients').get().c;const totalScreenings=db.prepare("SELECT count(*) AS c FROM patients WHERE json_extract(body, '$.photo') IS NOT NULL").get().c;const pendingReviews=db.prepare("SELECT count(*) AS c FROM patients WHERE json_extract(body, '$.stage') = 'screened'").get().c;const completedReviews=db.prepare("SELECT count(*) AS c FROM clinical_reviews").get().c;const totalReferrals=db.prepare('SELECT count(*) AS c FROM referrals').get().c;const referralsByStatus=db.prepare('SELECT status, count(*) AS count FROM referrals GROUP BY status').all();const referralsByFacility=db.prepare('SELECT facility, count(*) AS count FROM referrals GROUP BY facility').all();const totalInvestigations=db.prepare('SELECT count(*) AS c FROM investigations').get().c;const pendingInvestigations=db.prepare("SELECT count(*) AS c FROM investigations WHERE status != 'completed' AND status != 'cancelled'").get().c;const completedInvestigations=db.prepare("SELECT count(*) AS c FROM investigations WHERE status = 'completed'").get().c;const totalConsultations=db.prepare('SELECT count(*) AS c FROM consultations').get().c;const suspiciousFindings=db.prepare("SELECT count(*) AS c FROM ai_analyses WHERE model_class LIKE '%Suspicious%' OR model_class LIKE '%Fibrosis%' OR model_class LIKE '%Leukoplakia%'").get().c;const villageBreakdown=db.prepare("SELECT json_extract(body, '$.village') AS village, count(*) AS count FROM patients GROUP BY json_extract(body, '$.village')").all();return json(res,200,{ok:true,stats:{totalPatients,totalScreenings,pendingReviews,completedReviews,totalReferrals,referralsByStatus,referralsByFacility,totalInvestigations,pendingInvestigations,completedInvestigations,totalConsultations,suspiciousFindings,villageBreakdown}});}
+     allowed(s,['admin','doctor','specialist','navigator','hospital']);
+     return json(res,200,{ok:true,stats:buildDashboardStats(db,s,aiRegistry)});
+    }
     if(path==='/api/automation/status'&&method==='GET'){const {url,token}=integration();const counts=db.prepare('SELECT count(*) AS total,sum(CASE WHEN delivered_at IS NULL THEN 1 ELSE 0 END) AS pending FROM events').get();return json(res,200,{configured:Boolean(url&&token),pending:counts.pending||0,total:counts.total,receipts:db.prepare('SELECT count(*) AS n FROM automation_receipts').get().n,events:db.prepare('SELECT id,patient_id AS patientId,type,delivered_at AS deliveredAt,attempts,last_error AS lastError FROM events ORDER BY rowid DESC LIMIT 30').all()});}
     if(path==='/api/automation/sync'&&method==='POST')return json(res,200,await deliver());
     if(path==='/api/auth/change-password'&&method==='POST'){

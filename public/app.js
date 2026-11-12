@@ -10,20 +10,23 @@ import {qualityMetrics,overdue} from './domain.js';
 import {
   api,currentIdentity,forgetSession,recoverSession,login,logout,openCache,localPatients,
   createScreening,syncRecords,reviewPatient,saveLocal,updateReferral,syncSingleRecord,
-  resolveConflict,fetchDashboardStats,listInvestigations,createInvestigation,updateInvestigation,
-  listNavigation,createNavigation
+  resolveConflict,fetchDashboardStats,fetchAiAnalyses,fetchAiStatus,fetchConsultationsList,
+  fetchAdminUsers,fetchAdminAudit,fetchFacilities,listInvestigations,createInvestigation,
+  updateInvestigation,listNavigation,createNavigation
 } from './client.js';
 import {initI18n,t as i18nT,setLanguage as i18nSetLanguage} from './i18n.js';
 import {mountSyncDrawer,openSyncDrawer,closeSyncDrawer,openConflictModal} from './sync-drawer.js';
 import {loginMarkup} from './auth.js';
 import {publicSiteMarkup} from './public-site.js';
 import {ITDA_FACILITIES} from './facilities-data.js';
+import {computeLiveStats,adminDashboardMarkup,districtInsightsMarkup,aiReviewOverviewMarkup} from './district-dashboard.js';
 
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 let lang=localStorage.getItem('drishti-lang')||'en',view='dashboard',selected=null,photo=null,quality=null;
 let role='worker',patients=[],events=[],referralsList=[],investigationsList=[],navigationList=[];
+let aiAnalysesList=[],consultationsList=[],adminUsersList=[],adminAuditList=[],aiStatusInfo=null,facilityCatalog=[];
 let automation={configured:false,pending:0,events:[],receipts:0};
 let dashboardStats=null;
 
@@ -58,20 +61,28 @@ function toast(message){$('#toast').textContent=message;$('#toast').style.displa
 async function refresh(){
   patients=await localPatients();
   events=patients.filter(p=>p._sync==='pending');
-  if(navigator.onLine){
-    try{
-      const res=await api('/api/referrals');
-      referralsList=res.referrals||[];
-    }catch{}
-    try{
-      const invRes=await listInvestigations();
-      investigationsList=invRes.investigations||[];
-    }catch{}
-    try{
-      const navRes=await listNavigation();
-      navigationList=navRes.navigation||[];
-    }catch{}
+  if(!navigator.onLine)return;
+
+  const jobs=[];
+  jobs.push(api('/api/referrals').then(r=>{referralsList=r.referrals||[];}).catch(()=>{}));
+  jobs.push(fetchFacilities().then(r=>{facilityCatalog=r.facilities||[];}).catch(()=>{}));
+
+  if(role!=='patient'){
+    jobs.push(listInvestigations().then(r=>{investigationsList=r.investigations||[];}).catch(()=>{}));
+    jobs.push(listNavigation().then(r=>{navigationList=r.navigation||[];}).catch(()=>{}));
+    jobs.push(fetchAiAnalyses().then(r=>{aiAnalysesList=r.analyses||[];}).catch(()=>{}));
+    jobs.push(fetchAiStatus().then(r=>{aiStatusInfo=r;}).catch(()=>{}));
+    jobs.push(api('/api/automation/status').then(r=>{automation=r;}).catch(()=>{}));
   }
+  if(['admin','doctor','specialist','navigator','hospital'].includes(role)){
+    jobs.push(fetchDashboardStats().then(r=>{dashboardStats=r.stats;}).catch(()=>{}));
+    jobs.push(fetchConsultationsList().then(r=>{consultationsList=r.consultations||[];}).catch(()=>{}));
+  }
+  if(role==='admin'){
+    jobs.push(fetchAdminUsers().then(r=>{adminUsersList=r.users||[];}).catch(()=>{}));
+    jobs.push(fetchAdminAudit().then(r=>{adminAuditList=r.audit||[];}).catch(()=>{}));
+  }
+  await Promise.allSettled(jobs);
 }
 
 async function persist(p,type){
@@ -327,6 +338,15 @@ function shell(){
       await logout();
       patients=[];
       events=[];
+      referralsList=[];
+      investigationsList=[];
+      navigationList=[];
+      aiAnalysesList=[];
+      consultationsList=[];
+      adminUsersList=[];
+      adminAuditList=[];
+      dashboardStats=null;
+      aiStatusInfo=null;
       showLogin();
     } catch {
       toast(lang==='te'?'లాగౌట్ చేయడానికి సర్వర్ కనెక్షన్ అవసరం.':'Connect to the server to sign out securely.');
@@ -402,12 +422,36 @@ function intro(title,sub='',button=false){
   return `<div class="intro"><div><h1>${title}</h1><p class="sub">${sub}</p></div>${button&&['worker','asha'].includes(role)?`<button class="btn primary" data-new>＋ ${t('new')}</button>`:''}</div>`;
 }
 
+function getLiveStatsSnapshot(){
+  return computeLiveStats({
+    patients,
+    referralsList,
+    investigationsList,
+    navigationList,
+    aiAnalysesList,
+    consultationsList,
+    adminUsersList,
+    automation,
+    aiStatusInfo,
+    dashboardStats,
+    facilityCatalog,
+    fallbackFacilities:ITDA_FACILITIES
+  });
+}
+
 function stats(){
+  const activeReferralCount=referralsList.length
+    ? referralsList.filter(r=>!['completed','cancelled'].includes(r.status)).length
+    : patients.filter(p=>['referred','diagnostics','treatment'].includes(p.stage)).length;
+  const overdueSet=new Set([
+    ...patients.filter(p=>overdue(p)).map(p=>p.id),
+    ...referralsList.filter(r=>r.isOverdue).map(r=>r.patientId)
+  ]);
   return `<div class="stats">${[
     ['total',patients.length,'♧'],
     ['pending',patients.filter(p=>p.stage==='screened').length,'◷'],
-    ['referral',patients.filter(p=>['referred','diagnostics','treatment'].includes(p.stage)).length,'↗'],
-    ['overdue',patients.filter(p=>overdue(p)).length,'◴']
+    ['referral',activeReferralCount,'↗'],
+    ['overdue',overdueSet.size,'◴']
   ].map(([key,value])=>`
     <div class="stat">
       <div class="stat-top">${t(key)}<span class="stat-icon">${icons[key==='total'?'patients':key==='pending'?'reviews':key==='referral'?'referrals':'district']}</span></div>
@@ -454,6 +498,21 @@ function tasks(){
 }
 
 function dashboard(){
+  if(role==='admin'){
+    const stData=getLiveStatsSnapshot();
+    const recentTable=table([...patients].sort((a,b)=>(b.updatedAt||b.createdAt||'').localeCompare(a.updatedAt||a.createdAt||'')).slice(0,5));
+    return adminDashboardMarkup({
+      lang,
+      st:stData,
+      statsHtml:stats(),
+      tableHtml:recentTable,
+      patients,
+      referralsList,
+      aiStatusInfo,
+      adminUsersList,
+      stageLabels:stages
+    });
+  }
   const isWorker = ['worker','asha'].includes(role);
   return intro(t('welcome'),t('subtitle'),true)+`
   <section class="hero">
@@ -489,7 +548,7 @@ function dashboard(){
       </section>
       <section class="card">
         <h2>${t('workflow')}</h2>
-        <div class="flow">${Object.entries(stages).map(([k],i)=>`<div class="${i===0?'done':''}"><b>${i+1}</b>${st(k)}</div>`).join('')}</div>
+        <div class="flow">${Object.entries(stages).map(([k])=>{const count=patients.filter(p=>p.stage===k).length;return `<div class="${count>0?'done':''}"><b>${count}</b>${st(k)}</div>`;}).join('')}</div>
         <p class="mini">${lang==='te'?'వైద్యుని సమీక్ష ద్వారా మాత్రమే సంరక్షణ నిర్ణయాలు.':'Care decisions remain with the reviewing clinician. AI assessment is not a diagnosis.'}</p>
       </section>
     </div>
@@ -722,7 +781,9 @@ function screening(){
 function registry(){
   const isReview=view==='reviews';
   let list=patients.filter(p=>isReview?p.stage==='screened':true);
+  const aiPanel=isReview?aiReviewOverviewMarkup({lang,aiStatusInfo,aiAnalysesList,pendingCount:list.length}):'';
   return intro(t(view),isReview?(lang==='te'?'మానవ సమీక్ష కోసం స్క్రీనింగ్‌లు. జెమిని AI నిర్ణయ సహాయం.':'Screenings awaiting clinician assessment. AI assists; doctors decide.'):(lang==='te'?'ప్రతి రోగి, ప్రతి తదుపరి అడుగు.':'One record. Every next step accounted for.'),true)+
+  aiPanel+
   `<div class="toolbar">
     <input class="search" id="search" placeholder="${t('search')}" aria-label="${t('search')}">
     <select class="language" id="filter">
@@ -1263,10 +1324,18 @@ function bindPatientPortal(){
 // -------------------------------------------------------------
 function facilitiesPortalView(){
   const isTe=lang==='te';
+  const liveFacs=getLiveStatsSnapshot().facilityNetwork||[];
+  const findMetrics=f=>{
+    const name=f.name.toLowerCase();
+    const matchKey=name.includes('mobile')?'mobile':name.includes('kgh')||name.includes('visakhapatnam')?'king george':name.includes('araku')?'araku':name.includes('chintapall')?'chintapall':name.includes('hukumpeta')?'hukumpeta':'paderu';
+    return liveFacs.find(lf=>lf.name.toLowerCase().includes(matchKey))||{activeReferrals:0,totalReferrals:0,investigationsCount:0,overdueReferrals:0};
+  };
   return intro(isTe?'ఐటీడీఏ పాడేరు ఆసుపత్రుల నెట్‌వర్క్':'ITDA Paderu Healthcare Facility Network',
-    isTe?'అల్లూరి సీతారామరాజు జిల్లాలోని 6 అనుసంధానించబడిన కేంద్రాలు.':'Integrated secondary and tertiary referral network.')+
+    isTe?'అల్లూరి సీతారామరాజు జిల్లాలోని అనుసంధానించబడిన కేంద్రాలు & ప్రత్యక్ష లోడ్.':'Integrated secondary and tertiary referral network with live caseload.')+
   `<div class="facilities-grid">
-    ${ITDA_FACILITIES.map(f=>`
+    ${ITDA_FACILITIES.map(f=>{
+      const m=findMetrics(f);
+      return `
       <div class="facility-card">
         <div class="facility-header">
           <div>
@@ -1278,12 +1347,17 @@ function facilitiesPortalView(){
           </span>
         </div>
         <p class="facility-level">${isTe&&f.levelTe?f.levelTe:f.level}</p>
+        <div class="dash-inline-pills" style="margin:8px 0 10px;">
+          <span class="pill amber">${isTe?'క్రియాశీల రెఫరల్స్':'Active Referrals'}: ${m.activeReferrals}</span>
+          <span class="pill">${isTe?'ల్యాబ్ / బయాప్సీ':'Labs / Biopsy'}: ${m.investigationsCount}</span>
+          ${m.overdueReferrals?`<span class="pill red">${isTe?'గడువు దాటినవి':'Overdue'}: ${m.overdueReferrals}</span>`:''}
+        </div>
         <div class="facility-meta">
           <span>🩺 ${f.hasDentalSurgeon?(isTe?'దంత వైద్యుడు కలరు':'Dental Surgeon On-Duty'):(isTe?'విజిటింగ్ డెంటిస్ట్':'Visiting Clinician')}</span>
           <span>📞 ${esc(f.phone||'08935-252233')}</span>
         </div>
-      </div>
-    `).join('')}
+      </div>`;
+    }).join('')}
   </div>`;
 }
 
@@ -1400,68 +1474,13 @@ function record(){
 // DISTRICT INSIGHTS & REAL-TIME DASHBOARD (SQLite Live Stats)
 // -------------------------------------------------------------
 function district(){
-  const isTe=lang==='te';
-  const st = dashboardStats || {
-    totalPatients: patients.length,
-    totalScreenings: patients.filter(p=>p.photo).length,
-    pendingReviews: patients.filter(p=>p.stage==='screened').length,
-    completedReviews: patients.filter(p=>p.stage!=='screened').length,
-    totalReferrals: referralsList.length,
-    totalInvestigations: investigationsList.length,
-    totalConsultations: 2,
-    suspiciousFindings: 1,
-    villageBreakdown: [
-      { village: 'Paderu', count: 5 },
-      { village: 'Araku Valley', count: 4 },
-      { village: 'Hukumpeta', count: 3 },
-      { village: 'Chintapalle', count: 2 }
-    ]
-  };
-
-  return intro(t('district'),isTe?'ఐటీడీఏ పాడేరు ప్రత్యక్ష డేటాబేస్ విశ్లేషణ మరియు నివేదికలు.':'Live SQLite database aggregation across all agency mandals.')+
-  `<div class="stats">
-    <div class="stat"><div class="stat-top">${isTe?'మొత్తం రోగులు':'Total Patients'}<span class="stat-icon">👥</span></div><strong>${String(st.totalPatients).padStart(2,'0')}</strong><small>${isTe?'రిజిస్టర్ అయినవారు':'Registered'}</small></div>
-    <div class="stat"><div class="stat-top">${isTe?'నోటి స్క్రీనింగ్‌లు':'Oral Screenings'}<span class="stat-icon">📷</span></div><strong>${String(st.totalScreenings).padStart(2,'0')}</strong><small>${isTe?'ఫోటో రికార్డులు':'Photo captures'}</small></div>
-    <div class="stat"><div class="stat-top">${isTe?'సమీక్ష పెండింగ్':'Pending Reviews'}<span class="stat-icon">⏳</span></div><strong style="color:#d97706;">${String(st.pendingReviews).padStart(2,'0')}</strong><small>${isTe?'వైద్యుని కోసం వేచి':'Doctor queue'}</small></div>
-    <div class="stat"><div class="stat-top">${isTe?'మొత్తం రెఫరల్స్':'Referrals'}<span class="stat-icon">↗</span></div><strong>${String(st.totalReferrals).padStart(2,'0')}</strong><small>${isTe?'ఆసుపత్రి బదిలీలు':'Facility cases'}</small></div>
-  </div>
-
-  <div class="stats">
-    <div class="stat"><div class="stat-top">${isTe?'బయాప్సీ & ల్యాబ్ పరీక్షలు':'Investigations'}<span class="stat-icon">🔬</span></div><strong>${String(st.totalInvestigations).padStart(2,'0')}</strong><small>${isTe?'ల్యాబ్ ఆర్డర్లు':'Biopsy orders'}</small></div>
-    <div class="stat"><div class="stat-top">${isTe?'టెలికన్సల్టేషన్లు':'Teleconsultations'}<span class="stat-icon">📹</span></div><strong>${String(st.totalConsultations).padStart(2,'0')}</strong><small>${isTe?'వీడియో కాల్స్':'WebRTC calls'}</small></div>
-    <div class="stat"><div class="stat-top">${isTe?'అనుమానిత ఫలితాలు':'Suspicious Cases'}<span class="stat-icon">⚠</span></div><strong style="color:#dc2626;">${String(st.suspiciousFindings).padStart(2,'0')}</strong><small>${isTe?'OSMF / ల్యూకోప్లాకియా':'Early triage alerts'}</small></div>
-    <div class="stat"><div class="stat-top">${isTe?'పూర్తయిన సమీక్షలు':'Completed Reviews'}<span class="stat-icon">✓</span></div><strong>${String(st.completedReviews).padStart(2,'0')}</strong><small>${isTe?'డాక్టర్ ఆమోదం':'Signed decisions'}</small></div>
-  </div>
-
-  <div class="columns">
-    <section class="card">
-      <div class="card-head">
-        <h2>${isTe?'గ్రామాల వారీగా రోగుల పంపిణీ':'Coverage by Agency Village'}</h2>
-        <button class="btn" id="btn-refresh-stats" style="font-size:11px;padding:4px 8px;">↻ Refresh</button>
-      </div>
-      <div style="margin-top:10px;">
-        ${(st.villageBreakdown||[]).map(v=>`
-          <div class="bar-row">
-            <span>${esc(v.village||'Unknown')}</span>
-            <div class="bar"><i style="width:${Math.min(100, (v.count / Math.max(1, st.totalPatients)) * 100)}%"></i></div>
-            <b>${v.count}</b>
-          </div>
-        `).join('')}
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>${isTe?'సంరక్షణ దశల పంపిణీ':'Care Pipeline Progression'}</h2>
-      ${Object.keys(stages).map(k=>{
-        const n=patients.filter(p=>p.stage===k).length;
-        return `<div class="bar-row">
-          <span>${st(k)}</span>
-          <div class="bar"><i style="width:${(n/Math.max(1,patients.length))*100}%"></i></div>
-          <b>${n}</b>
-        </div>`;
-      }).join('')}
-    </section>
-  </div>`;
+  return districtInsightsMarkup({
+    lang,
+    st:getLiveStatsSnapshot(),
+    title:t('district'),
+    patients,
+    stageLabels:stages
+  });
 }
 
 function bindDistrict(){
@@ -1469,10 +1488,9 @@ function bindDistrict(){
   if(btnRefresh){
     btnRefresh.onclick=async()=>{
       try{
-        const res=await fetchDashboardStats();
-        dashboardStats=res.stats;
+        await refresh();
         render();
-        toast(lang==='te'?'జిల్లా గణాంకాలు రిఫ్రెష్ అయ్యాయి.':'Dashboard stats refreshed from database.');
+        toast(lang==='te'?'జిల్లా గణాంకాలు రిఫ్రెష్ అయ్యాయి.':'Dashboard stats refreshed from live database.');
       }catch(err){toast(err.message);}
     };
   }
@@ -1554,6 +1572,15 @@ function bindCommon(){
       }
     };
   });
+  if($('#btn-open-sync-from-dash'))$('#btn-open-sync-from-dash').onclick=()=>openSyncDrawer();
+  if($('#btn-refresh-admin-dash'))$('#btn-refresh-admin-dash').onclick=async()=>{
+    try{
+      await syncRecords().catch(()=>{});
+      await refresh();
+      render();
+      toast(lang==='te'?'జిల్లా డ్యాష్‌బోర్డ్ రిఫ్రెష్ అయింది.':'Live SQLite district data refreshed.');
+    }catch(err){toast(err.message);}
+  };
 }
 
 function render(){

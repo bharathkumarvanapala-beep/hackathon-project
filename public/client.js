@@ -116,6 +116,12 @@ export async function listReferrals(query=''){return api(`/api/referrals${query?
 export async function updateReferral(referralId,status,notes=''){return api(`/api/referrals/${encodeURIComponent(referralId)}`,{method:'PATCH',data:{status,notes}});}
 export async function createReferral(patientId,data){return api(`/api/patients/${encodeURIComponent(patientId)}/referrals`,{method:'POST',data});}
 export async function fetchDashboardStats(){return api('/api/dashboard/stats');}
+export async function fetchAiAnalyses(){return api('/api/ai/analyses');}
+export async function fetchAiStatus(){return api('/api/ai/status');}
+export async function fetchConsultationsList(){return api('/api/consultations');}
+export async function fetchAdminUsers(){return api('/api/admin/users');}
+export async function fetchAdminAudit(){return api('/api/admin/audit');}
+export async function fetchFacilities(){return api('/api/facilities');}
 export async function listInvestigations(query=''){return api(`/api/investigations${query?`?${query}`:''}`);}
 export async function createInvestigation(data){return api('/api/investigations',{method:'POST',data});}
 export async function updateInvestigation(id,data){return api(`/api/investigations/${encodeURIComponent(id)}`,{method:'PATCH',data});}
