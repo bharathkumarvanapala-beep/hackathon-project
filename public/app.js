@@ -9,6 +9,7 @@ import {voiceMarkup,mountVoice} from './voice-intake.js';
 import {qualityMetrics,overdue} from './domain.js';
 import {
   api,currentIdentity,forgetSession,recoverSession,login,logout,openCache,localPatients,
+  localOutbox,saveCachedDataset,getCachedDataset,getLastSyncAt,syncOutboxItem,deleteOutboxItem,
   createScreening,syncRecords,reviewPatient,saveLocal,updateReferral,syncSingleRecord,
   resolveConflict,fetchDashboardStats,fetchAiAnalyses,fetchAiStatus,fetchConsultationsList,
   fetchAdminUsers,fetchAdminAudit,fetchFacilities,listInvestigations,createInvestigation,
@@ -25,10 +26,10 @@ const $=s=>document.querySelector(s);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 let lang=localStorage.getItem('drishti-lang')||'en',view='dashboard',selected=null,photo=null,quality=null;
-let role='worker',patients=[],events=[],referralsList=[],investigationsList=[],navigationList=[];
+let role='worker',patients=[],events=[],outboxList=[],referralsList=[],investigationsList=[],navigationList=[];
 let aiAnalysesList=[],consultationsList=[],adminUsersList=[],adminAuditList=[],aiStatusInfo=null,facilityCatalog=[];
 let automation={configured:false,pending:0,events:[],receipts:0};
-let dashboardStats=null;
+let dashboardStats=null,lastSyncAt=null;
 
 const copy={
   team:['Care team','సంరక్షణ బృందం'],dashboard:['Overview','అవలోకనం'],patients:['Patient registry','రోగుల నమోదు'],
@@ -58,31 +59,71 @@ const st=s=>stages[s]?.[lang==='te'?1:0]||s;
 
 function toast(message){$('#toast').textContent=message;$('#toast').style.display='block';setTimeout(()=>$('#toast').style.display='none',4500);}
 
+async function hydrateOfflineDatasets(){
+  const [refs,facs,invs,navs,aiRows,aiSt,autoSt,dashSt,cons,users,audits]=await Promise.all([
+    getCachedDataset('referrals',[]),
+    getCachedDataset('facilityCatalog',[]),
+    getCachedDataset('investigations',[]),
+    getCachedDataset('navigation',[]),
+    getCachedDataset('aiAnalyses',[]),
+    getCachedDataset('aiStatusInfo',null),
+    getCachedDataset('automation',{configured:false,pending:0,events:[],receipts:0}),
+    getCachedDataset('dashboardStats',null),
+    getCachedDataset('consultations',[]),
+    getCachedDataset('adminUsers',[]),
+    getCachedDataset('adminAudit',[])
+  ]);
+  referralsList=refs||[];
+  facilityCatalog=facs||[];
+  investigationsList=invs||[];
+  navigationList=navs||[];
+  aiAnalysesList=aiRows||[];
+  aiStatusInfo=aiSt;
+  automation=autoSt||{configured:false,pending:0,events:[],receipts:0};
+  dashboardStats=dashSt;
+  consultationsList=cons||[];
+  adminUsersList=users||[];
+  adminAuditList=audits||[];
+}
+
 async function refresh(){
   patients=await localPatients();
   events=patients.filter(p=>p._sync==='pending');
-  if(!navigator.onLine)return;
+  outboxList=await localOutbox();
+  lastSyncAt=await getLastSyncAt();
+
+  if(!navigator.onLine){
+    await hydrateOfflineDatasets();
+    return;
+  }
 
   const jobs=[];
-  jobs.push(api('/api/referrals').then(r=>{referralsList=r.referrals||[];}).catch(()=>{}));
-  jobs.push(fetchFacilities().then(r=>{facilityCatalog=r.facilities||[];}).catch(()=>{}));
+  jobs.push(api('/api/referrals').then(r=>{referralsList=r.referrals||[];return saveCachedDataset('referrals',referralsList);}).catch(async()=>{referralsList=await getCachedDataset('referrals',referralsList);}));
+  jobs.push(fetchFacilities().then(r=>{facilityCatalog=r.facilities||[];return saveCachedDataset('facilityCatalog',facilityCatalog);}).catch(()=>{}));
 
   if(role!=='patient'){
-    jobs.push(listInvestigations().then(r=>{investigationsList=r.investigations||[];}).catch(()=>{}));
-    jobs.push(listNavigation().then(r=>{navigationList=r.navigation||[];}).catch(()=>{}));
-    jobs.push(fetchAiAnalyses().then(r=>{aiAnalysesList=r.analyses||[];}).catch(()=>{}));
-    jobs.push(fetchAiStatus().then(r=>{aiStatusInfo=r;}).catch(()=>{}));
-    jobs.push(api('/api/automation/status').then(r=>{automation=r;}).catch(()=>{}));
+    jobs.push(listInvestigations().then(r=>{investigationsList=r.investigations||[];return saveCachedDataset('investigations',investigationsList);}).catch(()=>{}));
+    jobs.push(listNavigation().then(r=>{navigationList=r.navigation||[];return saveCachedDataset('navigation',navigationList);}).catch(()=>{}));
+    jobs.push(fetchAiAnalyses().then(r=>{aiAnalysesList=r.analyses||[];return saveCachedDataset('aiAnalyses',aiAnalysesList);}).catch(()=>{}));
+    jobs.push(fetchAiStatus().then(r=>{aiStatusInfo=r;return saveCachedDataset('aiStatusInfo',aiStatusInfo);}).catch(()=>{}));
+    jobs.push(api('/api/automation/status').then(r=>{automation=r;return saveCachedDataset('automation',automation);}).catch(()=>{}));
+  } else {
+    const firstPatient=patients[0];
+    if(firstPatient){
+      jobs.push(api(`/api/consultations?patientId=${encodeURIComponent(firstPatient.id)}`).then(r=>{consultationsList=r.consultations||[];return saveCachedDataset('consultations',consultationsList);}).catch(()=>{}));
+    }
   }
   if(['admin','doctor','specialist','navigator','hospital'].includes(role)){
-    jobs.push(fetchDashboardStats().then(r=>{dashboardStats=r.stats;}).catch(()=>{}));
-    jobs.push(fetchConsultationsList().then(r=>{consultationsList=r.consultations||[];}).catch(()=>{}));
+    jobs.push(fetchDashboardStats().then(r=>{dashboardStats=r.stats;return saveCachedDataset('dashboardStats',dashboardStats);}).catch(()=>{}));
+    jobs.push(fetchConsultationsList().then(r=>{consultationsList=r.consultations||[];return saveCachedDataset('consultations',consultationsList);}).catch(()=>{}));
   }
   if(role==='admin'){
-    jobs.push(fetchAdminUsers().then(r=>{adminUsersList=r.users||[];}).catch(()=>{}));
-    jobs.push(fetchAdminAudit().then(r=>{adminAuditList=r.audit||[];}).catch(()=>{}));
+    jobs.push(fetchAdminUsers().then(r=>{adminUsersList=r.users||[];return saveCachedDataset('adminUsers',adminUsersList);}).catch(()=>{}));
+    jobs.push(fetchAdminAudit().then(r=>{adminAuditList=r.audit||[];return saveCachedDataset('adminAudit',adminAuditList);}).catch(()=>{}));
   }
   await Promise.allSettled(jobs);
+  // Overlay optimistic offline outbox items so queued edits stay visible until synced
+  outboxList=await localOutbox();
 }
 
 async function persist(p,type){
@@ -99,8 +140,41 @@ async function persist(p,type){
 
 const icons=Object.fromEntries(['dashboard','patients','screening','reviews','referrals','district','team','settings'].map(key=>[key,icon(key)]));
 
+function screeningDraftKey(){
+  const id=currentIdentity();
+  return id?`drishti-screening-draft-${id.instanceId}-${id.user.id}`:null;
+}
+
+function readScreeningDraft(){
+  const key=screeningDraftKey();
+  if(!key)return null;
+  try{
+    const raw=localStorage.getItem(key);
+    return raw?JSON.parse(raw):null;
+  }catch{return null;}
+}
+
+function saveScreeningDraft(draft){
+  const key=screeningDraftKey();
+  if(!key)return;
+  try{localStorage.setItem(key,JSON.stringify({...draft,updatedAt:new Date().toISOString()}));}catch{}
+}
+
+function clearScreeningDraft(){
+  const key=screeningDraftKey();
+  if(!key)return;
+  try{localStorage.removeItem(key);}catch{}
+}
+
+function queuedTotalCount(){
+  const pendingPatients=patients.filter(p=>p._sync==='pending'||p._sync==='conflict'||Boolean(p._syncError));
+  const ids=new Set(pendingPatients.map(p=>p.id));
+  const extraOutbox=outboxList.filter(o=>!o.patientId||!ids.has(o.patientId)||o.type!=='review.save');
+  return pendingPatients.length+extraOutbox.length;
+}
+
 function shell(){
-  const pending=patients.filter(p=>p._sync==='pending').length;
+  const pending=queuedTotalCount();
   const userObj = currentIdentity()?.user || { name: 'Health Worker', role: 'worker' };
   
   const roleTitle = lang==='te'
@@ -133,6 +207,7 @@ function shell(){
       <div class="header-right-side">
         <div class="header-landscape-art" aria-hidden="true"></div>
         <div class="header-controls">
+          <span id="connection-pill" class="pill ${navigator.onLine?'':'offline'}" style="font-size:10.5px;">● ${t(navigator.onLine?'online':'offline')}</span>
           <button class="btn" id="btn-view-public-site" style="padding:5px 11px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px;background:#ffffff;border:1px solid #dce8e2;color:#043329;" title="View Public Website">
             🌐 <span>${lang==='te'?'ప్రజా వెబ్‌సైట్':'Public Website'}</span>
           </button>
@@ -254,7 +329,6 @@ function shell(){
             </div>
           </button>
 
-          ${role!=='patient'?`
           <button class="sidebar-nav-btn" id="sync-drawer-btn" type="button" aria-label="Open offline sync drawer">
             <span class="sidebar-nav-icon">${icon('sync', 20)}</span>
             <div class="sidebar-nav-text">
@@ -262,7 +336,7 @@ function shell(){
               <small>${lang==='te'?'పరికర నిల్వ':'Local Cache'}</small>
             </div>
             <span class="sidebar-nav-badge">${pending}</span>
-          </button>`:''}
+          </button>
 
           ${role==='admin'?`
           <button class="sidebar-nav-btn ${view==='team'?'active':''}" data-nav="team">
@@ -329,6 +403,7 @@ function shell(){
       await logout();
       patients=[];
       events=[];
+      outboxList=[];
       referralsList=[];
       investigationsList=[];
       navigationList=[];
@@ -338,6 +413,7 @@ function shell(){
       adminAuditList=[];
       dashboardStats=null;
       aiStatusInfo=null;
+      lastSyncAt=null;
       showLogin();
     } catch {
       toast(lang==='te'?'లాగౌట్ చేయడానికి సర్వర్ కనెక్షన్ అవసరం.':'Connect to the server to sign out securely.');
@@ -348,8 +424,21 @@ function shell(){
 }
 
 function updateSyncDrawer(){
+  const userObj=currentIdentity()?.user||{};
   mountSyncDrawer({
-    patients,lang,
+    role,
+    user:userObj,
+    patients,
+    outbox:outboxList,
+    referralsList,
+    investigationsList,
+    navigationList,
+    consultationsList,
+    aiAnalysesList,
+    automation,
+    lastSyncAt,
+    hasScreeningDraft:Boolean(readScreeningDraft()),
+    lang,
     onSyncAll:async()=>{await sync();},
     onSyncSingle:async(patientId)=>{
       try{
@@ -364,8 +453,25 @@ function updateSyncDrawer(){
         await refresh();render();
       }catch(err){toast(err.message);await refresh();render();}
     },
+    onSyncOutboxItem:async(itemId)=>{
+      try{
+        const res=await syncOutboxItem(itemId);
+        if(res.conflict){
+          toast(lang==='te'?'వైరుధ్యం గుర్తించబడింది.':'Conflict detected.');
+        }else{
+          toast(lang==='te'?'ఆఫ్‌లైన్ చర్య సింక్ అయింది.':'Queued offline action synchronized.');
+        }
+        await refresh();render();
+      }catch(err){toast(err.message);await refresh();render();}
+    },
+    onDiscardOutboxItem:async(itemId)=>{
+      await deleteOutboxItem(itemId);
+      await refresh();render();
+      toast(lang==='te'?'పెండింగ్ చర్య తొలగించబడింది.':'Queued action removed.');
+    },
     onResolveConflict:(patient)=>showConflictDialog(patient),
-    onOpenRecord:(id)=>navigate('record',id)
+    onOpenRecord:(id)=>navigate('record',id),
+    onOpenView:(v)=>navigate(v)
   });
 }
 
@@ -390,7 +496,7 @@ function showConflictDialog(patient){
 }
 
 function updateConnection(){
-  const badge=document.querySelector('.top-actions > .pill');
+  const badge=$('#connection-pill')||document.querySelector('.top-actions > .pill');
   if(badge){
     badge.classList.toggle('offline',!navigator.onLine);
     badge.textContent='● '+t(navigator.onLine?'online':'offline');
@@ -867,9 +973,12 @@ function bindReferralsQueue(){
   document.querySelectorAll('[data-ref-action]').forEach(btn=>{
     btn.onclick=async()=>{
       const refId=btn.dataset.refAction,toStatus=btn.dataset.toStatus;btn.disabled=true;
+      const refObj=referralsList.find(r=>r.id===refId);
       try{
-        await updateReferral(refId,toStatus);
-        toast(lang==='te'?`రెఫరల్ స్థితి ${toStatus} గా మార్చబడింది.`:`Referral status updated to ${toStatus}.`);
+        const res=await updateReferral(refId,toStatus,'',{patientId:refObj?.patientId,patientName:refObj?.patient?.name});
+        toast(res?.offlineQueued
+          ?(lang==='te'?`ఆఫ్‌లైన్ క్యూలో సేవ్ అయింది: ${toStatus}.`:`Queued offline: referral → ${toStatus}. Will sync automatically.`)
+          :(lang==='te'?`రెఫరల్ స్థితి ${toStatus} గా మార్చబడింది.`:`Referral status updated to ${toStatus}.`));
         await refresh();render();
       }catch(err){toast(err.message);btn.disabled=false;}
     };
@@ -981,10 +1090,13 @@ function bindInvestigations(){
       e.preventDefault();
       try{
         const patientId=$('#inv-patient').value;
+        const patientName=patients.find(p=>p.id===patientId)?.name||patientId;
         const testType=$('#inv-type').value;
         const facility=$('#inv-facility').value;
-        await createInvestigation({patientId,testType,facility,clinicalFindings:'Specialist ordered '+testType});
-        toast(lang==='te'?'రోగనిర్ధారణ పరీక్ష విజయవంతంగా ఆదేశించబడింది!':'Investigation ordered successfully!');
+        const res=await createInvestigation({patientId,patientName,testType,facility,clinicalFindings:'Specialist ordered '+testType});
+        toast(res?.offlineQueued
+          ?(lang==='te'?'పరీక్ష ఆర్డర్ ఆఫ్‌లైన్ క్యూలో సేవ్ అయింది.':'Investigation order queued offline in IndexedDB.')
+          :(lang==='te'?'రోగనిర్ధారణ పరీక్ష విజయవంతంగా ఆదేశించబడింది!':'Investigation ordered successfully!'));
         await refresh();render();
       }catch(err){toast(err.message);}
     };
@@ -993,11 +1105,14 @@ function bindInvestigations(){
   document.querySelectorAll('[data-update-inv]').forEach(btn=>{
     btn.onclick=async()=>{
       const invId=btn.dataset.updateInv;
+      const invObj=investigationsList.find(i=>i.id===invId);
       const findings=prompt(lang==='te'?'పాథాలజీ విశ్లేషణ ఫలితాన్ని నమోదు చేయండి:':'Enter histopathology / lab findings summary:','Histopathology confirmed: Hyperkeratosis with mild epithelial dysplasia. Benign.');
       if(findings){
         try{
-          await updateInvestigation(invId,{status:'completed',clinicalFindings:findings});
-          toast(lang==='te'?'నివేదిక విజయవంతంగా సేవ్ అయింది.':'Report saved successfully.');
+          const res=await updateInvestigation(invId,{status:'completed',clinicalFindings:findings,patientId:invObj?.patient_id,patientName:invObj?.patient_id});
+          toast(res?.offlineQueued
+            ?(lang==='te'?'పాథాలజీ నివేదిక ఆఫ్‌లైన్ క్యూలో సేవ్ అయింది.':'Lab report queued offline in IndexedDB.')
+            :(lang==='te'?'నివేదిక విజయవంతంగా సేవ్ అయింది.':'Report saved successfully.'));
           await refresh();render();
         }catch(err){toast(err.message);}
       }
@@ -1081,10 +1196,13 @@ function bindNavigation(){
       e.preventDefault();
       try{
         const patientId=$('#nav-patient').value;
+        const patientName=patients.find(p=>p.id===patientId)?.name||patientId;
         const contactStatus=$('#nav-contact').value;
         const barrierIdentified=$('#nav-barrier').value;
-        await createNavigation({patientId,contactStatus,barrierIdentified,attendanceConfirmed:true,notes:'Hospital coordinator logged support.'});
-        toast(lang==='te'?'నావిగేషన్ సహాయం విజయవంతంగా సేవ్ అయింది!':'Navigation event logged successfully!');
+        const res=await createNavigation({patientId,patientName,contactStatus,barrierIdentified,attendanceConfirmed:true,notes:'Hospital coordinator logged support.'});
+        toast(res?.offlineQueued
+          ?(lang==='te'?'నావిగేషన్ లాగ్ ఆఫ్‌లైన్ క్యూలో సేవ్ అయింది.':'Navigation event queued offline in IndexedDB.')
+          :(lang==='te'?'నావిగేషన్ సహాయం విజయవంతంగా సేవ్ అయింది!':'Navigation event logged successfully!'));
         await refresh();render();
       }catch(err){toast(err.message);}
     };
@@ -1252,7 +1370,7 @@ function facilitiesPortalView(){
 function record(){
   const p=patients.find(p=>p.id===selected);
   if(!p)return intro(t('empty'));
-  const canReview=['doctor','specialist'].includes(role)&&Boolean(p.version)&&navigator.onLine;
+  const canReview=['doctor','specialist'].includes(role)&&Boolean(p.version);
   return `<button class="btn" data-go="patients">← ${t('back')}</button>
   <div style="height:22px"></div>
   <div class="record-top">
@@ -1529,6 +1647,7 @@ async function readPhoto(file){
 }
 
 function bindScreen(){
+  const formEl = $('#screen-form');
   const fileInput = $('#photo');
   const cameraInput = $('#photo-camera');
   const dropZone = $('#drop-zone');
@@ -1537,6 +1656,25 @@ function bindScreen(){
   const statusBanner = $('#quality-status-banner');
   const statusTitle = $('#quality-status-title');
   const statusTe = $('#quality-status-te');
+
+  const captureFormDraft = () => {
+    if (!formEl) return;
+    const data = {
+      name: formEl.querySelector('[name="name"]')?.value || '',
+      age: formEl.querySelector('[name="age"]')?.value || '',
+      village: formEl.querySelector('[name="village"]')?.value || '',
+      phone: formEl.querySelector('[name="phone"]')?.value || '',
+      history: formEl.querySelector('[name="history"]')?.value || '',
+      consent: Boolean(formEl.querySelector('[name="consent"]')?.checked),
+      photo,
+      quality
+    };
+    if (data.name || data.age || data.village || data.phone || data.history || data.photo) {
+      saveScreeningDraft(data);
+    } else {
+      clearScreeningDraft();
+    }
+  };
 
   const handleSelectedFile = async (file) => {
     if (!file) return;
@@ -1557,6 +1695,7 @@ function bindScreen(){
         if (statusTitle) statusTitle.textContent = quality.pass ? 'Image Quality: Good' : 'Retake Recommended';
         if (statusTe) statusTe.textContent = quality.pass ? 'చిత్ర నాణ్యత: మంచి' : 'మళ్లీ తీయండి: వెలుతురు మెరుగుపరచండి';
       }
+      captureFormDraft();
       toast(lang === 'te' ? 'చిత్రం విశ్లేషించబడింది, నాణ్యత తనిఖీ పూర్తయింది.' : 'Image loaded & quality checked.');
     } catch (err) {
       toast(err.message);
@@ -1589,6 +1728,7 @@ function bindScreen(){
       if (statusTitle) statusTitle.textContent = 'Image Quality: Good';
       if (statusTe) statusTe.textContent = 'చిత్ర నాణ్యత: మంచి';
     }
+    captureFormDraft();
     toast(lang === 'te' ? 'చిత్రం రీసెట్ చేయబడింది.' : 'Preview reset to demo image.');
   };
 
@@ -1618,6 +1758,24 @@ function bindScreen(){
     });
   }
 
+  const existingDraft=readScreeningDraft();
+  if(existingDraft&&formEl){
+    if(existingDraft.name&&!formEl.querySelector('[name="name"]').value)formEl.querySelector('[name="name"]').value=existingDraft.name;
+    if(existingDraft.age&&!formEl.querySelector('[name="age"]').value)formEl.querySelector('[name="age"]').value=existingDraft.age;
+    if(existingDraft.village&&!formEl.querySelector('[name="village"]').value)formEl.querySelector('[name="village"]').value=existingDraft.village;
+    if(existingDraft.phone&&!formEl.querySelector('[name="phone"]').value)formEl.querySelector('[name="phone"]').value=existingDraft.phone;
+    if(existingDraft.history&&!formEl.querySelector('[name="history"]').value)formEl.querySelector('[name="history"]').value=existingDraft.history;
+    if(existingDraft.photo&&!photo){
+      photo=existingDraft.photo;
+      quality=existingDraft.quality||null;
+      $('#photo-result').innerHTML=`<img id="preview-img-tag" class="preview" src="${photo}" alt="Restored offline draft photograph">`;
+    }
+  }
+  if(formEl){
+    formEl.addEventListener('input',captureFormDraft);
+    formEl.addEventListener('change',captureFormDraft);
+  }
+
   $('#screen-form').onsubmit = async (e) => {
     e.preventDefault();
     const form = new FormData(e.target);
@@ -1643,6 +1801,7 @@ function bindScreen(){
     if (!p.name || !p.village) return toast('Please complete the required fields.');
     try {
       await persist(p, 'screening.created');
+      clearScreeningDraft();
       resetIntake();
       navigate('record', p.id);
       toast(lang === 'te' ? 'స్క్రీనింగ్ సేవ్ అయింది.' : 'Screening saved. Shared status is shown above the record.');
@@ -1656,7 +1815,7 @@ function bindReview(){
   const reviewSnapshot=structuredClone(patients.find(p=>p.id===selected));
   $('#review-form').onsubmit=async e=>{
     e.preventDefault();
-    if(!['doctor','specialist'].includes(role)||!navigator.onLine) return toast('Clinical reviews require a server connection.');
+    if(!['doctor','specialist'].includes(role)) return toast('Only doctors or specialists can submit clinical reviews.');
     const form=new FormData(e.target),p=structuredClone(reviewSnapshot);
     const next=form.get('stage'),facility=form.get('facility').trim(),due=form.get('due');
     if(['referred','diagnostics','treatment'].includes(next)&&(!facility||!due)){
@@ -1670,9 +1829,12 @@ function bindReview(){
     p.provisionalDiagnosis=form.get('provisionalDiagnosis')?.trim()||'';
     p.priority=form.get('priority')||'routine';
     try{
+      const queuedOffline=!navigator.onLine;
       await persist(p,next==='referred'?'referral.created':'review.completed');
       render();
-      toast(lang==='te'?'సమీక్ష మరియు రెఫరల్ సేవ్ అయ్యాయి.':'Review and referral saved.');
+      toast(queuedOffline
+        ?(lang==='te'?'సమీక్ష ఆఫ్‌లైన్ క్యూలో సేవ్ అయింది. కనెక్ట్ అయిన తర్వాత సింక్ అవుతుంది.':'Clinical review queued offline. It will sync automatically when online.')
+        :(lang==='te'?'సమీక్ష మరియు రెఫరల్ సేవ్ అయ్యాయి.':'Review and referral saved.'));
     }catch(error){toast(error.message);}
   };
 }
@@ -1680,14 +1842,19 @@ function bindReview(){
 let syncing=false;
 async function sync(){
   if(syncing)return;
+  if(!navigator.onLine){
+    toast(t('offline'));
+    return;
+  }
   syncing=true;
   try{
     const result=await syncRecords();
+    if(automation?.configured&&role!=='patient'){
+      try{await api('/api/automation/sync',{method:'POST',data:{}});}catch{}
+    }
     await refresh();
-    try{await api('/api/automation/sync',{method:'POST',data:{}});}catch(error){toast(error.message);}
-    automation=await api('/api/automation/status');
     render();
-    toast(lang==='te'?`${result.uploaded||0} రికార్డులు అప్‌లోడ్ అయ్యాయి; ${automation.pending} n8n పెండింగ్.`:`${result.uploaded||0} records uploaded; ${automation.pending} n8n events pending.`);
+    toast(lang==='te'?`${result.uploaded||0} రికార్డులు అప్‌లోడ్ అయ్యాయి; ${automation.pending||0} n8n పెండింగ్.`:`${result.uploaded||0} records uploaded; ${automation.pending||0} n8n events pending.`);
   }catch(error){toast(error.message);}
   finally{syncing=false;}
 }
@@ -2070,13 +2237,14 @@ async function enterWorkspace(){
   role=currentIdentity().user.role;
   await openCache();
   await refresh();
-  try{
-    await syncRecords();
-    automation=await api('/api/automation/status');
-    await refresh();
-  }catch(error){
-    if(error.status===401)return showLogin();
-    toast(error.message);
+  if(navigator.onLine){
+    try{
+      await syncRecords();
+      await refresh();
+    }catch(error){
+      if(error.status===401)return showLogin();
+      toast(error.message);
+    }
   }
   view = role==='patient' ? 'patient_portal' : 'dashboard';
   render();
@@ -2085,12 +2253,14 @@ async function enterWorkspace(){
 async function pollShared(){
   if(!currentIdentity()||!navigator.onLine)return;
   try{
-    await syncRecords();
+    const result=await syncRecords();
     await refresh();
-    automation=await api('/api/automation/status');
+    if(result?.uploaded>0){
+      toast(lang==='te'?`${result.uploaded} ఆఫ్‌లైన్ మార్పులు స్వయంచాలకంగా సింక్ అయ్యాయి.`:`Synced ${result.uploaded} offline item(s) automatically.`);
+    }
     if(!['screening','record','team'].includes(view))render();
   }catch(error){
-    if(error.status===401){patients=[];events=[];showLogin();}
+    if(error.status===401){patients=[];events=[];outboxList=[];showLogin();}
   }
 }
 
@@ -2104,8 +2274,8 @@ async function boot(){
     // Default entry point: Public Website
     showPublicSite();
   }
-  window.addEventListener('online',()=>{if(currentIdentity()){updateConnection();pollShared();}});
-  window.addEventListener('offline',()=>{if(currentIdentity()){updateConnection();toast(t('offline'));}});
+  window.addEventListener('online',()=>{if(currentIdentity()){updateConnection();updateSyncDrawer();pollShared();}});
+  window.addEventListener('offline',()=>{if(currentIdentity()){updateConnection();updateSyncDrawer();toast(t('offline'));}});
   setInterval(()=>{
     if(currentIdentity()?.expires<Date.now()){
       patients=[];events=[];showLogin();return;

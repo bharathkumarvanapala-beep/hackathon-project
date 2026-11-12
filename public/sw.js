@@ -1,4 +1,4 @@
-const CACHE = 'drishti-v11';
+const CACHE = 'drishti-v12';
 const ASSETS = [
   '/',
   '/index.html',
