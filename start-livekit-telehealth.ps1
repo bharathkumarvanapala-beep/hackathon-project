@@ -1,12 +1,12 @@
 # ==============================================================================
-# Aarogya Drishti — All-in-One Local LiveKit & Telehealth Startup Script
+# Aarogya Drishti -- All-in-One Local LiveKit & Telehealth Startup Script
 # ==============================================================================
 $ErrorActionPreference = 'Continue'
 $workspaceDir = $PSScriptRoot
 Set-Location -Path $workspaceDir
 
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host "  Aarogya Drishti — Local LiveKit Telehealth Server" -ForegroundColor Green
+Write-Host "  Aarogya Drishti -- Local LiveKit Telehealth Server" -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 # 1. Locate LiveKit Server Executable
@@ -22,7 +22,7 @@ if (-not (Test-Path $livekitExe)) {
 # 2. Check if LiveKit Server is already running
 $lkProcess = Get-Process -Name "livekit-server" -ErrorAction SilentlyContinue
 if ($lkProcess) {
-  Write-Host "[✓] LiveKit Server is already active (PID: $($lkProcess.Id))" -ForegroundColor Green
+  Write-Host "[OK] LiveKit Server is already active (PID: $($lkProcess.Id))" -ForegroundColor Green
 } else {
   if (Test-Path $livekitExe) {
     Write-Host "[*] Starting LiveKit Server in dev mode on port 7880..." -ForegroundColor Yellow
@@ -30,7 +30,7 @@ if ($lkProcess) {
     $cfgArg = if (Test-Path 'livekit.yaml') { "--config livekit.yaml --dev" } else { "--dev" }
     Start-Process -FilePath $livekitExe -ArgumentList $cfgArg -NoNewWindow -RedirectStandardOutput ".local/livekit.log" -RedirectStandardError ".local/livekit-error.log"
     Start-Sleep -Seconds 2
-    Write-Host "[✓] LiveKit Server started on ws://127.0.0.1:7880" -ForegroundColor Green
+    Write-Host "[OK] LiveKit Server started on ws://127.0.0.1:7880" -ForegroundColor Green
   } else {
     Write-Host "[!] Warning: livekit-server.exe not found. WebRTC native fallback active." -ForegroundColor Red
   }
@@ -39,7 +39,7 @@ if ($lkProcess) {
 # 3. Check port 7880
 $port7880 = Get-NetTCPConnection -LocalPort 7880 -ErrorAction SilentlyContinue | Where-Object { $_.State -eq 'Listen' }
 if ($port7880) {
-  Write-Host "[✓] Verified LiveKit port 7880 is LISTENING" -ForegroundColor Green
+  Write-Host "[OK] Verified LiveKit port 7880 is LISTENING" -ForegroundColor Green
 } else {
   Write-Host "[!] Port 7880 not detected yet, continuing..." -ForegroundColor Yellow
 }
