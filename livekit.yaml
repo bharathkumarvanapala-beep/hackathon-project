@@ -11,3 +11,4 @@ keys:
   devkey: secret
 logging:
   level: info
+

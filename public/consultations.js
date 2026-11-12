@@ -819,242 +819,68 @@ function createFallbackMediaStream(role = 'doctor', name = 'Dr. K. Srinivas', su
   const ctx = canvas.getContext('2d');
   const isDoc = role === 'doctor' || String(subtitle).toLowerCase().includes('specialist') || String(name).toLowerCase().includes('dr.');
   let startTime = performance.now();
-  const ecgHistory = [];
-  const maxEcgPoints = 140;
 
-  function getEcgY(t) {
-    const cycle = (t % 850) / 850;
-    if (cycle < 0.15) return 0;
-    if (cycle < 0.22) return Math.sin((cycle - 0.15) / 0.07 * Math.PI) * -8; // P wave
-    if (cycle < 0.28) return 0;
-    if (cycle < 0.31) return 4; // Q wave
-    if (cycle < 0.36) return -38; // R peak
-    if (cycle < 0.40) return 12; // S dip
-    if (cycle < 0.50) return 0;
-    if (cycle < 0.65) return Math.sin((cycle - 0.50) / 0.15 * Math.PI) * -12; // T wave
-    return 0;
-  }
+  const img = new Image();
+  img.src = isDoc ? '/doctor-clean.jpg' : '/patient-clean.jpg';
 
   const draw = () => {
     const now = performance.now();
-    const elapsed = now - startTime;
-    const t = elapsed;
+    const t = now - startTime;
 
-    // 1. Clinic / Room Background
-    if (isDoc) {
-      const wallGrad = ctx.createLinearGradient(0, 0, 800, 600);
-      wallGrad.addColorStop(0, '#0f172a');
-      wallGrad.addColorStop(0.5, '#1e293b');
-      wallGrad.addColorStop(1, '#0f172a');
-      ctx.fillStyle = wallGrad;
-      ctx.fillRect(0, 0, 800, 600);
+    // Plain dark clean background
+    ctx.fillStyle = '#0a0f1d';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Clinic Poster on wall
-      ctx.fillStyle = 'rgba(255,255,255,0.08)';
-      ctx.fillRect(520, 70, 220, 150);
-      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(520, 70, 220, 150);
-
-      ctx.fillStyle = '#38bdf8';
-      ctx.font = 'bold 15px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('ORAL HEALTH', 630, 110);
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '12px Inter, sans-serif';
-      ctx.fillText('Our Priority · ITDA Care', 630, 130);
-      ctx.font = '30px Inter, sans-serif';
-      ctx.fillText('🦷', 630, 175);
-
-      // Bookshelf silhouette on left
-      ctx.fillStyle = 'rgba(15,23,42,0.6)';
-      ctx.fillRect(60, 100, 160, 320);
-      ctx.fillStyle = 'rgba(255,255,255,0.1)';
-      ctx.fillRect(70, 150, 140, 6);
-      ctx.fillRect(70, 230, 140, 6);
-      ctx.fillRect(70, 310, 140, 6);
-    } else {
-      const wallGrad = ctx.createLinearGradient(0, 0, 800, 600);
-      wallGrad.addColorStop(0, '#111827');
-      wallGrad.addColorStop(0.5, '#1f2937');
-      wallGrad.addColorStop(1, '#0f172a');
-      ctx.fillStyle = wallGrad;
-      ctx.fillRect(0, 0, 800, 600);
-
-      // Window lighting beam
-      ctx.fillStyle = 'rgba(56, 189, 248, 0.05)';
-      ctx.beginPath();
-      ctx.moveTo(100, 0);
-      ctx.lineTo(260, 0);
-      ctx.lineTo(200, 600);
-      ctx.lineTo(40, 600);
-      ctx.fill();
-    }
-
-    // 2. Dynamic Lifelike Person Avatar
-    const breath = Math.sin(t * 0.002) * 4;
-    const sway = Math.sin(t * 0.001) * 3;
-    const mouthPulse = Math.max(0, Math.sin(t * 0.007) * 9 + Math.cos(t * 0.013) * 5);
-    const isBlink = (Math.floor(t / 2600) % 2 === 0) && (t % 2600 < 110);
-
-    const cx = 400 + sway;
-    const cy = 340 + breath;
-
-    // Body / Shoulders
-    ctx.fillStyle = isDoc ? '#ffffff' : '#1e3a8a';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + 180, 170, 120, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    if (isDoc) {
-      // Stethoscope
-      ctx.strokeStyle = '#334155';
-      ctx.lineWidth = 6;
-      ctx.beginPath();
-      ctx.arc(cx, cy + 90, 65, 0.2 * Math.PI, 0.8 * Math.PI);
-      ctx.stroke();
-
-      // Chest piece
-      ctx.fillStyle = '#94a3b8';
-      ctx.beginPath();
-      ctx.arc(cx, cy + 160, 12, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Shirt collar & tie
-      ctx.fillStyle = '#0284c7';
-      ctx.beginPath();
-      ctx.moveTo(cx - 20, cy + 85);
-      ctx.lineTo(cx, cy + 130);
-      ctx.lineTo(cx + 20, cy + 85);
-      ctx.fill();
-    }
-
-    // Neck
-    ctx.fillStyle = '#e2b597';
-    ctx.fillRect(cx - 25, cy + 60, 50, 40);
-
-    // Head
-    ctx.fillStyle = '#e2b597';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, 65, 80, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Hair
-    ctx.fillStyle = '#1e1b18';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy - 45, 70, 48, 0, Math.PI, 2 * Math.PI);
-    ctx.fill();
-
-    // Eyes
-    ctx.fillStyle = '#1e293b';
-    if (isBlink) {
-      ctx.fillRect(cx - 32, cy - 8, 18, 3);
-      ctx.fillRect(cx + 14, cy - 8, 18, 3);
-    } else {
-      ctx.beginPath();
-      ctx.ellipse(cx - 24, cy - 8, 7, 5, 0, 0, Math.PI * 2);
-      ctx.ellipse(cx + 24, cy - 8, 7, 5, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      if (isDoc) {
-        // Glasses
-        ctx.strokeStyle = '#0284c7';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(cx - 35, cy - 18, 26, 20);
-        ctx.strokeRect(cx + 9, cy - 18, 26, 20);
-        ctx.beginPath();
-        ctx.moveTo(cx - 9, cy - 8);
-        ctx.lineTo(cx + 9, cy - 8);
-        ctx.stroke();
+    // Draw plain photorealistic Doctor or Patient image cleanly
+    if (img.complete && img.naturalWidth > 0) {
+      // Subtle organic breathing camera motion (1% zoom oscillation)
+      const zoom = 1.0 + Math.sin(t * 0.0012) * 0.012;
+      const imgW = img.naturalWidth;
+      const imgH = img.naturalHeight;
+      const imgRatio = imgW / imgH;
+      const targetRatio = canvas.width / canvas.height;
+      let renderW, renderH;
+      if (targetRatio > imgRatio) {
+        renderW = canvas.width * zoom;
+        renderH = (canvas.width / imgRatio) * zoom;
+      } else {
+        renderH = canvas.height * zoom;
+        renderW = (canvas.height * imgRatio) * zoom;
       }
+      const renderX = (canvas.width - renderW) / 2;
+      const renderY = (canvas.height - renderH) / 2;
+      ctx.drawImage(img, renderX, renderY, renderW, renderH);
     }
 
-    // Mouth (Dynamic speaking motion)
-    ctx.fillStyle = '#b91c1c';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + 38, 14, Math.max(3, mouthPulse), 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // 3. Real-Time Telemetry HUD Overlay
-    // Top-left: LIVE pill
+    // Minimal Clean LIVE indicator pill (Top Left)
     ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
-    ctx.fillRect(20, 20, 220, 38);
-    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.fillRect(20, 20, 100, 32);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(20, 20, 220, 38);
+    ctx.strokeRect(20, 20, 100, 32);
 
     ctx.fillStyle = '#10b981';
     ctx.beginPath();
-    ctx.arc(38, 39, 6 + Math.sin(t * 0.005) * 2, 0, Math.PI * 2);
+    ctx.arc(36, 36, 5 + Math.sin(t * 0.005) * 1.5, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 13px Inter, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('LIVE 1080p · 30 FPS', 54, 43);
-
-    // Top-right: Dynamic Millisecond Wall-clock
-    const clockStr = new Date().toISOString().replace('T', ' ').slice(0, 23);
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
-    ctx.fillRect(540, 20, 240, 38);
-    ctx.strokeRect(540, 20, 240, 38);
-    ctx.fillStyle = '#38bdf8';
-    ctx.font = '12px Courier New, monospace';
-    ctx.fillText(clockStr, 552, 43);
-
-    // Bottom-left: Real-time Rolling ECG Pulse
-    ecgHistory.push(getEcgY(t));
-    if (ecgHistory.length > maxEcgPoints) ecgHistory.shift();
-
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-    ctx.fillRect(20, 480, 240, 100);
-    ctx.strokeStyle = 'rgba(16, 185, 129, 0.3)';
-    ctx.strokeRect(20, 480, 240, 100);
-
-    ctx.strokeStyle = '#10b981';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    const ecgBaseY = 540;
-    ecgHistory.forEach((pt, i) => {
-      const px = 25 + (i / maxEcgPoints) * 228;
-      const py = ecgBaseY + pt;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    });
-    ctx.stroke();
-
-    ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 12px Inter, sans-serif';
-    ctx.fillText('❤️ 72 BPM · SpO2 98%', 30, 502);
+    ctx.textAlign = 'left';
+    ctx.fillText('LIVE', 48, 40);
 
-    // Bottom-center: Audio VU Equalizer (Dynamic bars)
+    // Minimal Clean Name Pill (Bottom Left)
     ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-    ctx.fillRect(280, 520, 210, 60);
-    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-    ctx.strokeRect(280, 520, 210, 60);
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '11px Inter, sans-serif';
-    ctx.fillText('Audio Input (Mic Active)', 290, 538);
-
-    for (let b = 0; b < 10; b++) {
-      const barHeight = Math.max(4, Math.sin(t * 0.008 + b * 0.7) * 20 + Math.cos(t * 0.015 + b) * 10);
-      ctx.fillStyle = barHeight > 22 ? '#ef4444' : barHeight > 14 ? '#f59e0b' : '#10b981';
-      ctx.fillRect(295 + b * 18, 570 - barHeight, 12, barHeight);
-    }
-
-    // Bottom-right: Name & Designation Badge
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-    ctx.fillRect(510, 520, 270, 60);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-    ctx.strokeRect(510, 520, 270, 60);
+    ctx.fillRect(20, 540, 260, 42);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.strokeRect(20, 540, 260, 42);
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 14px Inter, sans-serif';
-    ctx.fillText(name, 522, 544);
+    ctx.font = 'bold 13px Inter, sans-serif';
+    ctx.fillText(name, 32, 558);
     ctx.fillStyle = '#38bdf8';
     ctx.font = '11px Inter, sans-serif';
-    ctx.fillText(subtitle, 522, 565);
+    ctx.fillText(subtitle, 32, 574);
 
     requestAnimationFrame(draw);
   };
@@ -1063,14 +889,14 @@ function createFallbackMediaStream(role = 'doctor', name = 'Dr. K. Srinivas', su
 
   const stream = canvas.captureStream(30);
 
-  // Synthesize ambient mic track via Web Audio so WebRTC audio is active
+  // Attach ambient microphone audio track so WebRTC & LiveKit audio is active
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (AudioCtx) {
       const ac = new AudioCtx();
       const osc = ac.createOscillator();
       const gain = ac.createGain();
-      gain.gain.value = 0.001; // Silent ambient room tone
+      gain.gain.value = 0.0001; // subtle live ambient tone
       osc.connect(gain);
       const dest = ac.createMediaStreamDestination();
       gain.connect(dest);

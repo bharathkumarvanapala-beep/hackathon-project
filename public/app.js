@@ -754,6 +754,21 @@ function referralsQueue(){
       <div class="stat"><div class="stat-top">${isTe?'హాజరయ్యారు':'Attended'}<span class="stat-icon">🏥</span></div><strong>${String(attendedCount).padStart(2,'0')}</strong><small>${isTe?'ఆసుపత్రిలో పరిశీలించారు':'Facility evaluated'}</small></div>
       <div class="stat"><div class="stat-top">${isTe?'గడువు దాటినవి':'Overdue'}<span class="stat-icon">⚠</span></div><strong style="color:#c0392b;">${String(overdueCount).padStart(2,'0')}</strong><small>${isTe?'తక్షణ చర్య అవసరం':'Immediate attention'}</small></div>
     </div>
+    <div style="background:linear-gradient(135deg,#064e3b,#047857);color:#fff;padding:16px 20px;border-radius:12px;margin:16px 0;display:flex;align-items:center;justify-content:space-between;box-shadow:0 6px 20px rgba(6,78,59,0.2);">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span style="font-size:24px;">📹</span>
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="width:8px;height:8px;border-radius:50%;background:#34d399;display:inline-block;box-shadow:0 0 8px #34d399;"></span>
+            <strong style="font-size:14px;">${isTe ? 'ప్రస్తుత లైవ్ టెలికన్సల్టేషన్ రూమ్' : 'Live Doctor-Patient Consultation Room Ready'}</strong>
+          </div>
+          <small style="opacity:0.9;font-size:11px;">${isTe ? 'చెట్టి కొండబాబు · డాక్టర్ మరియు రోగి ఒకే రూమ్‌లో కనెక్ట్ అవుతారు' : 'Patient: Chetti Kondababu · One-click connects Doctor and Patient into the same room'}</small>
+        </div>
+      </div>
+      <button class="btn" style="background:#ffffff;color:#065f46;font-weight:700;font-size:12px;padding:8px 18px;border-radius:8px;display:flex;align-items:center;gap:6px;cursor:pointer;" data-start-video-consult="AD-PAD-20261112-5775">
+        <span>🟢</span> ${isTe ? 'రూమ్‌లో చేరండి' : 'Join Consultation Room'}
+      </button>
+    </div>
     <div class="toolbar">
       <input class="search" id="ref-search" placeholder="${isTe?'రోగి, ఐడీ లేదా గ్రామం వెతకండి…':'Search patient, ID, or village…'}" aria-label="Search referrals">
       <select class="language" id="ref-status-filter">
@@ -874,6 +889,24 @@ function teleconsultView(){
       <strong style="font-size:14px;">${isDoctor ? 'Medical Officer' : 'Health Worker (ASHA)'}</strong>
       <small>${currentIdentity()?.user?.name || 'User'}</small>
     </div>
+  </div>
+
+  <div style="background:linear-gradient(135deg,#064e3b,#047857);color:#fff;padding:18px 22px;border-radius:14px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 8px 24px rgba(6,78,59,0.25);">
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div style="width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;font-size:24px;">📹</div>
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#34d399;box-shadow:0 0 10px #34d399;"></span>
+          <strong style="font-size:16px;">${isTe ? 'ప్రత్యక్ష టెలికన్సల్టేషన్ రూమ్ సిద్ధంగా ఉంది' : 'Live Doctor-Patient Consultation Room Ready'}</strong>
+        </div>
+        <p style="margin:4px 0 0;font-size:13px;opacity:0.95;">
+          ${isTe ? 'రోగి: చెట్టి కొండబాబు · డాక్టర్ మరియు రోగి ఒకే రూమ్‌లో కలుస్తారు' : 'Patient: Chetti Kondababu · One-click connects Doctor and Patient into the same room'}
+        </p>
+      </div>
+    </div>
+    <button class="btn" style="background:#ffffff;color:#065f46;font-weight:700;font-size:13px;padding:10px 22px;border-radius:8px;display:flex;align-items:center;gap:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);cursor:pointer;" data-start-video-consult="AD-PAD-20261112-5775">
+      <span>🟢</span> ${isTe ? 'ఈ రూమ్‌లో చేరండి' : 'Join Consultation Room'}
+    </button>
   </div>
 
   <section class="card" style="margin-top:16px;">
@@ -1490,19 +1523,29 @@ function bindCommon(){
       const pId = b.dataset.startVideoConsult;
       b.disabled = true;
       try {
-        const p = patients.find(pt => pt.id === pId) || { id: pId, name: 'Patient' };
-        let cRes = await api(`/api/consultations?patientId=${encodeURIComponent(pId)}`).catch(() => ({ consultations: [] }));
-        let consult = cRes.consultations && cRes.consultations[0];
-        if (!consult) {
-          const now = new Date();
-          now.setMinutes(now.getMinutes() + 10);
-          const createRes = await api('/api/consultations', {
-            method: 'POST',
-            data: { patientId: pId, scheduledAt: now.toISOString() }
-          });
-          consult = createRes.consultation;
+        let consult = null;
+        let p = null;
+        
+        // 1. Fetch active consultation so BOTH windows automatically join the EXACT SAME ROOM
+        const activeRes = await api('/api/consultations/active').catch(() => null);
+        if (activeRes && activeRes.active && activeRes.active.id) {
+          consult = { id: activeRes.active.id, patientId: activeRes.active.patientId };
+          p = patients.find(pt => pt.id === consult.patientId) || { id: consult.patientId, name: activeRes.active.patientName || 'Chetti Kondababu' };
+        } else {
+          p = patients.find(pt => pt.id === pId) || { id: pId, name: 'Patient' };
+          let cRes = await api(`/api/consultations?patientId=${encodeURIComponent(pId)}`).catch(() => ({ consultations: [] }));
+          consult = cRes.consultations && cRes.consultations[0];
+          if (!consult) {
+            const now = new Date();
+            now.setMinutes(now.getMinutes() + 10);
+            const createRes = await api('/api/consultations', {
+              method: 'POST',
+              data: { patientId: pId, scheduledAt: now.toISOString() }
+            });
+            consult = createRes.consultation;
+          }
         }
-        toast(lang === 'te' ? 'వీడియో సంప్రదింపు ప్రారంభమవుతోంది...' : 'Launching Live Video Room...');
+        toast(lang === 'te' ? 'వీడియో సంప్రదింపు ప్రారంభమవుతోంది...' : 'Connecting to Live Room (' + (p.name || 'Patient') + ')...');
         await launchWebRTCModal(consult, lang === 'te', p);
       } catch (err) {
         toast(err.message);

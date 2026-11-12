@@ -37,7 +37,7 @@ export async function startServer(options={}){
  const lanHost=config.server.lanHost;
  const aiRegistry=options.aiRegistry||getDefaultAIRegistry(config);
  const infer=options.researchAI||((photo,opts)=>aiRegistry.runInference(photo,opts));let aiBusy=false,aiStatusPromise=null,aiCheckedAt=0;
- const directory=config.paths.dataDir;const db=openStore(directory);const root=await realpath(config.paths.publicDir);const secure=config.server.cookieSecure;const attempts=new Map();const videoRooms=new Map();let delivering=false;const dummyPasswordHash=passwordHash(randomBytes(32).toString('hex'));
+ const directory=config.paths.dataDir;const db=openStore(directory);const root=await realpath(config.paths.publicDir);const secure=config.server.cookieSecure;const attempts=new Map();const videoRooms=new Map();let delivering=false;let latestActiveConsultation=null;const dummyPasswordHash=passwordHash(randomBytes(32).toString('hex'));
  const setting=key=>db.prepare('SELECT value FROM settings WHERE key=?').get(key)?.value;const instanceId=db.prepare('SELECT value FROM meta WHERE key=?').get('instanceId').value;
  const voice=voiceIntake({db,fail,fetcher:options.voiceFetch,config:options.voiceConfig||process.env});
  function integration(){return {url:config.automation.n8nWebhookUrl||setting('n8nUrl'),token:config.automation.n8nWebhookToken||setting('n8nToken')};}
@@ -321,6 +321,17 @@ export async function startServer(options={}){
     if(path==='/api/consultations'&&method==='GET'){
      const patientId=new URL(req.url,'http://localhost').searchParams.get('patientId');if(!patientId||!/^AD-[A-Za-z0-9-]+$/.test(patientId))fail(400,'Patient ID required.');return json(res,200,{consultations:db.prepare('SELECT id,patient_id AS patientId,scheduled_at AS scheduledAt,status,room_url AS roomUrl FROM consultations WHERE patient_id=? ORDER BY scheduled_at DESC').all(patientId)});
     }
+    if(path==='/api/consultations/active'&&method==='GET'){
+     if(!latestActiveConsultation){
+       const firstConsult=db.prepare('SELECT id,patient_id FROM consultations ORDER BY created_at DESC LIMIT 1').get();
+       if(firstConsult){
+         const pRow=db.prepare('SELECT body FROM patients WHERE id=?').get(firstConsult.patient_id);
+         const pName=pRow?JSON.parse(pRow.body).name:'Chetti Kondababu';
+         latestActiveConsultation={id:firstConsult.id,patientId:firstConsult.patient_id,patientName:pName,startedAt:Date.now()};
+       }
+     }
+     return json(res,200,{ok:true,active:latestActiveConsultation});
+    }
     if(path==='/api/consultations'&&method==='POST'){
      allowed(s,['doctor','specialist']);const input=await body(req,4096);const patientId=string(input.patientId,80,true);if(!db.prepare('SELECT id FROM patients WHERE id=?').get(patientId))fail(404,'Patient not found.');const date=new Date(input.scheduledAt);if(!Number.isFinite(date.getTime())||date.getTime()<Date.now()-300000)fail(400,'Choose a current or future consultation time.');const id=randomUUID(),eventId=randomUUID(),now=new Date().toISOString();const event={id:eventId,type:'consultation.requested',patientId,createdAt:now,data:{consultationId:id,scheduledAt:date.toISOString()}};transaction(db,()=>{db.prepare('INSERT INTO consultations(id,patient_id,scheduled_at,created_by,event_id,created_at) VALUES(?,?,?,?,?,?)').run(id,patientId,date.toISOString(),s.id,eventId,now);db.prepare('INSERT INTO events(id,patient_id,type,body) VALUES(?,?,?,?)').run(eventId,patientId,event.type,JSON.stringify(event));audit(db,s,'consultation.requested',patientId);});return json(res,201,{consultation:{id,patientId,scheduledAt:date.toISOString(),status:'preparing'}});
     }
@@ -362,6 +373,9 @@ function createLiveKitToken(apiKey,apiSecret,identity,name,roomName,metadata={})
      if(!videoRooms.has(roomKey)){videoRooms.set(roomKey,{participants:new Map(),signals:[]});}
      const room=videoRooms.get(roomKey);
      room.participants.set(s.id,{id:s.id,name:s.name,role:s.role,joinedAt:Date.now()});
+     const pRow=db.prepare('SELECT body FROM patients WHERE id=?').get(consult.patient_id);
+     const pName=pRow?JSON.parse(pRow.body).name:'Patient';
+     latestActiveConsultation={id:cId,patientId:consult.patient_id,patientName:pName,startedAt:Date.now()};
      const livekitToken=createLiveKitToken(config.livekit.apiKey,config.livekit.apiSecret,s.id,s.name,roomName,{role:s.role,patientId:consult.patient_id});
      audit(db,s,'consultation.joined',consult.patient_id,{consultationId:cId,roomName});
      return json(res,200,{
