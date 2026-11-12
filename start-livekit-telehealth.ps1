@@ -1,4 +1,4 @@
-# ==============================================================================
+﻿# ==============================================================================
 # Aarogya Drishti — All-in-One Local LiveKit & Telehealth Startup Script
 # ==============================================================================
 $ErrorActionPreference = 'Continue'
@@ -24,7 +24,8 @@ if ($lkProcess) {
   if (Test-Path $livekitExe) {
     Write-Host "[*] Starting LiveKit Server in dev mode on port 7880..." -ForegroundColor Yellow
     if (-not (Test-Path '.local')) { New-Item -ItemType Directory -Path '.local' | Out-Null }
-    Start-Process -FilePath $livekitExe -ArgumentList "--dev" -NoNewWindow -RedirectStandardOutput ".local/livekit.log" -RedirectStandardError ".local/livekit-error.log"
+    $cfgArg = if (Test-Path 'livekit.yaml') { "--config livekit.yaml --dev" } else { "--dev" }
+    Start-Process -FilePath $livekitExe -ArgumentList $cfgArg -NoNewWindow -RedirectStandardOutput ".local/livekit.log" -RedirectStandardError ".local/livekit-error.log"
     Start-Sleep -Seconds 2
     Write-Host "[✓] LiveKit Server started on ws://127.0.0.1:7880" -ForegroundColor Green
   } else {

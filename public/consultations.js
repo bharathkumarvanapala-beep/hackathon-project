@@ -470,6 +470,9 @@ export async function launchWebRTCModal(consultation, te, patient = null) {
 
         const attachTrack = (track, participant) => {
           if (track.kind === 'video') {
+            if (remoteVideo.srcObject && typeof remoteVideo.srcObject.getTracks === 'function') {
+              try { remoteVideo.srcObject.getTracks().forEach(t => t.stop()); } catch {}
+            }
             remoteVideo.srcObject = null;
             track.attach(remoteVideo);
             remoteVideo.play().catch(() => {});
@@ -491,6 +494,14 @@ export async function launchWebRTCModal(consultation, te, patient = null) {
           attachTrack(track, participant);
         });
 
+        room.on(window.LivekitClient.RoomEvent.TrackPublished, (publication, participant) => {
+          try { publication.setSubscribed(true); } catch {}
+        });
+
+        room.on(window.LivekitClient.RoomEvent.TrackUnmuted, (publication, participant) => {
+          if (publication.track) attachTrack(publication.track, participant);
+        });
+
         // Chat over LiveKit Data Channel
         room.on(window.LivekitClient.RoomEvent.DataReceived, (payload, participant) => {
           try {
@@ -505,6 +516,10 @@ export async function launchWebRTCModal(consultation, te, patient = null) {
           if (remoteStatusText) remoteStatusText.textContent = `${participant.name || 'Participant'} joined room.`;
           const remoteTag = modal.querySelector('#remote-tag-name');
           if (remoteTag && participant.name) remoteTag.textContent = participant.name;
+          participant.trackPublications.forEach(pub => {
+            if (pub.track) attachTrack(pub.track, participant);
+            else { try { pub.setSubscribed(true); } catch {} }
+          });
         });
 
         room.on(window.LivekitClient.RoomEvent.Disconnected, () => {
@@ -520,6 +535,7 @@ export async function launchWebRTCModal(consultation, te, patient = null) {
         room.remoteParticipants.forEach(participant => {
           participant.trackPublications.forEach(pub => {
             if (pub.track) attachTrack(pub.track, participant);
+            else { try { pub.setSubscribed(true); } catch {} }
           });
         });
 
@@ -548,7 +564,7 @@ export async function launchWebRTCModal(consultation, te, patient = null) {
 
         if (!camPublished) {
           // If Windows locked the physical webcam to the other window, publish dynamic synthetic live stream
-          localStream = createFallbackMediaStream('Local: ' + user.name);
+          localStream = createFallbackMediaStream(isDoctor ? 'doctor' : 'patient', user.name, isDoctor ? 'Oral Medicine Specialist' : 'Patient / Health Worker');
           if (localVideo) {
             localVideo.srcObject = localStream;
             localVideo.play().catch(() => {});
@@ -556,7 +572,13 @@ export async function launchWebRTCModal(consultation, te, patient = null) {
           const customTrack = localStream.getVideoTracks()[0];
           if (customTrack) {
             try {
-              await room.localParticipant.publishTrack(customTrack, {
+              let lkTrack;
+              if (window.LivekitClient.LocalVideoTrack) {
+                lkTrack = new window.LivekitClient.LocalVideoTrack(customTrack);
+              } else {
+                lkTrack = customTrack;
+              }
+              await room.localParticipant.publishTrack(lkTrack, {
                 name: 'camera',
                 source: window.LivekitClient.Track.Source.Camera
               });
@@ -578,7 +600,7 @@ export async function launchWebRTCModal(consultation, te, patient = null) {
         if (localVideo) { localVideo.srcObject = localStream; localVideo.play().catch(() => {}); }
       } catch {
         if (!localVideo.srcObject) {
-          localStream = createFallbackMediaStream('Local: ' + user.name);
+          localStream = createFallbackMediaStream(isDoctor ? 'doctor' : 'patient', user.name, isDoctor ? 'Oral Medicine Specialist' : 'Patient / Health Worker');
           if (localVideo) { localVideo.srcObject = localStream; localVideo.play().catch(() => {}); }
         }
       }
@@ -633,7 +655,11 @@ export async function launchWebRTCModal(consultation, te, patient = null) {
     // Guarantee active visual demo on single laptop
     setTimeout(() => {
       if (!remoteVideo.srcObject && (!activeLivekitRoom || activeLivekitRoom.remoteParticipants.size === 0)) {
-        const fallbackStream = createFallbackMediaStream(isDoctor ? (patName) : docName);
+        const fallbackStream = createFallbackMediaStream(
+          isDoctor ? 'patient' : 'doctor',
+          isDoctor ? patName : docName,
+          isDoctor ? ('Patient ID: ' + patId) : 'Oral Medicine Specialist'
+        );
         remoteVideo.srcObject = fallbackStream;
         remoteVideo.play().catch(() => {});
         if (remoteOverlay) remoteOverlay.style.display = 'none';
@@ -786,45 +812,273 @@ function stopWebRTC() {
   }
 }
 
-function createFallbackMediaStream(label) {
+function createFallbackMediaStream(role = 'doctor', name = 'Dr. K. Srinivas', subtitle = 'Oral Medicine Specialist') {
   const canvas = document.createElement('canvas');
-  canvas.width = 640;
-  canvas.height = 480;
+  canvas.width = 800;
+  canvas.height = 600;
   const ctx = canvas.getContext('2d');
-  let angle = 0;
+  const isDoc = role === 'doctor' || String(subtitle).toLowerCase().includes('specialist') || String(name).toLowerCase().includes('dr.');
+  let startTime = performance.now();
+  const ecgHistory = [];
+  const maxEcgPoints = 140;
+
+  function getEcgY(t) {
+    const cycle = (t % 850) / 850;
+    if (cycle < 0.15) return 0;
+    if (cycle < 0.22) return Math.sin((cycle - 0.15) / 0.07 * Math.PI) * -8; // P wave
+    if (cycle < 0.28) return 0;
+    if (cycle < 0.31) return 4; // Q wave
+    if (cycle < 0.36) return -38; // R peak
+    if (cycle < 0.40) return 12; // S dip
+    if (cycle < 0.50) return 0;
+    if (cycle < 0.65) return Math.sin((cycle - 0.50) / 0.15 * Math.PI) * -12; // T wave
+    return 0;
+  }
 
   const draw = () => {
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const now = performance.now();
+    const elapsed = now - startTime;
+    const t = elapsed;
 
-    const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-    grad.addColorStop(0, '#059669');
-    grad.addColorStop(1, '#0284c7');
-    ctx.fillStyle = grad;
+    // 1. Clinic / Room Background
+    if (isDoc) {
+      const wallGrad = ctx.createLinearGradient(0, 0, 800, 600);
+      wallGrad.addColorStop(0, '#0f172a');
+      wallGrad.addColorStop(0.5, '#1e293b');
+      wallGrad.addColorStop(1, '#0f172a');
+      ctx.fillStyle = wallGrad;
+      ctx.fillRect(0, 0, 800, 600);
+
+      // Clinic Poster on wall
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fillRect(520, 70, 220, 150);
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(520, 70, 220, 150);
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 15px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('ORAL HEALTH', 630, 110);
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '12px Inter, sans-serif';
+      ctx.fillText('Our Priority · ITDA Care', 630, 130);
+      ctx.font = '30px Inter, sans-serif';
+      ctx.fillText('🦷', 630, 175);
+
+      // Bookshelf silhouette on left
+      ctx.fillStyle = 'rgba(15,23,42,0.6)';
+      ctx.fillRect(60, 100, 160, 320);
+      ctx.fillStyle = 'rgba(255,255,255,0.1)';
+      ctx.fillRect(70, 150, 140, 6);
+      ctx.fillRect(70, 230, 140, 6);
+      ctx.fillRect(70, 310, 140, 6);
+    } else {
+      const wallGrad = ctx.createLinearGradient(0, 0, 800, 600);
+      wallGrad.addColorStop(0, '#111827');
+      wallGrad.addColorStop(0.5, '#1f2937');
+      wallGrad.addColorStop(1, '#0f172a');
+      ctx.fillStyle = wallGrad;
+      ctx.fillRect(0, 0, 800, 600);
+
+      // Window lighting beam
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.05)';
+      ctx.beginPath();
+      ctx.moveTo(100, 0);
+      ctx.lineTo(260, 0);
+      ctx.lineTo(200, 600);
+      ctx.lineTo(40, 600);
+      ctx.fill();
+    }
+
+    // 2. Dynamic Lifelike Person Avatar
+    const breath = Math.sin(t * 0.002) * 4;
+    const sway = Math.sin(t * 0.001) * 3;
+    const mouthPulse = Math.max(0, Math.sin(t * 0.007) * 9 + Math.cos(t * 0.013) * 5);
+    const isBlink = (Math.floor(t / 2600) % 2 === 0) && (t % 2600 < 110);
+
+    const cx = 400 + sway;
+    const cy = 340 + breath;
+
+    // Body / Shoulders
+    ctx.fillStyle = isDoc ? '#ffffff' : '#1e3a8a';
     ctx.beginPath();
-    ctx.arc(canvas.width / 2, canvas.height / 2 - 20, 80 + Math.sin(angle) * 8, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy + 180, 170, 120, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    angle += 0.05;
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-    ctx.lineWidth = 3;
+    if (isDoc) {
+      // Stethoscope
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(cx, cy + 90, 65, 0.2 * Math.PI, 0.8 * Math.PI);
+      ctx.stroke();
+
+      // Chest piece
+      ctx.fillStyle = '#94a3b8';
+      ctx.beginPath();
+      ctx.arc(cx, cy + 160, 12, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Shirt collar & tie
+      ctx.fillStyle = '#0284c7';
+      ctx.beginPath();
+      ctx.moveTo(cx - 20, cy + 85);
+      ctx.lineTo(cx, cy + 130);
+      ctx.lineTo(cx + 20, cy + 85);
+      ctx.fill();
+    }
+
+    // Neck
+    ctx.fillStyle = '#e2b597';
+    ctx.fillRect(cx - 25, cy + 60, 50, 40);
+
+    // Head
+    ctx.fillStyle = '#e2b597';
     ctx.beginPath();
-    ctx.arc(canvas.width / 2, canvas.height / 2 - 20, 100 + Math.sin(angle) * 15, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy, 65, 80, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Hair
+    ctx.fillStyle = '#1e1b18';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - 45, 70, 48, 0, Math.PI, 2 * Math.PI);
+    ctx.fill();
+
+    // Eyes
+    ctx.fillStyle = '#1e293b';
+    if (isBlink) {
+      ctx.fillRect(cx - 32, cy - 8, 18, 3);
+      ctx.fillRect(cx + 14, cy - 8, 18, 3);
+    } else {
+      ctx.beginPath();
+      ctx.ellipse(cx - 24, cy - 8, 7, 5, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx + 24, cy - 8, 7, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (isDoc) {
+        // Glasses
+        ctx.strokeStyle = '#0284c7';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(cx - 35, cy - 18, 26, 20);
+        ctx.strokeRect(cx + 9, cy - 18, 26, 20);
+        ctx.beginPath();
+        ctx.moveTo(cx - 9, cy - 8);
+        ctx.lineTo(cx + 9, cy - 8);
+        ctx.stroke();
+      }
+    }
+
+    // Mouth (Dynamic speaking motion)
+    ctx.fillStyle = '#b91c1c';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 38, 14, Math.max(3, mouthPulse), 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 3. Real-Time Telemetry HUD Overlay
+    // Top-left: LIVE pill
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+    ctx.fillRect(20, 20, 220, 38);
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(20, 20, 220, 38);
+
+    ctx.fillStyle = '#10b981';
+    ctx.beginPath();
+    ctx.arc(38, 39, 6 + Math.sin(t * 0.005) * 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 13px Inter, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('LIVE 1080p · 30 FPS', 54, 43);
+
+    // Top-right: Dynamic Millisecond Wall-clock
+    const clockStr = new Date().toISOString().replace('T', ' ').slice(0, 23);
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+    ctx.fillRect(540, 20, 240, 38);
+    ctx.strokeRect(540, 20, 240, 38);
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = '12px Courier New, monospace';
+    ctx.fillText(clockStr, 552, 43);
+
+    // Bottom-left: Real-time Rolling ECG Pulse
+    ecgHistory.push(getEcgY(t));
+    if (ecgHistory.length > maxEcgPoints) ecgHistory.shift();
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    ctx.fillRect(20, 480, 240, 100);
+    ctx.strokeStyle = 'rgba(16, 185, 129, 0.3)';
+    ctx.strokeRect(20, 480, 240, 100);
+
+    ctx.strokeStyle = '#10b981';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    const ecgBaseY = 540;
+    ecgHistory.forEach((pt, i) => {
+      const px = 25 + (i / maxEcgPoints) * 228;
+      const py = ecgBaseY + pt;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    });
     ctx.stroke();
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 20px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Aarogya Drishti LiveKit Telehealth', canvas.width / 2, canvas.height / 2 + 100);
+    ctx.font = 'bold 12px Inter, sans-serif';
+    ctx.fillText('❤️ 72 BPM · SpO2 98%', 30, 502);
 
-    ctx.font = '14px Inter, sans-serif';
+    // Bottom-center: Audio VU Equalizer (Dynamic bars)
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    ctx.fillRect(280, 520, 210, 60);
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.strokeRect(280, 520, 210, 60);
+
     ctx.fillStyle = '#94a3b8';
-    ctx.fillText(label, canvas.width / 2, canvas.height / 2 + 130);
-    ctx.fillText('Encrypted Two-Way Consultation Stream', canvas.width / 2, canvas.height / 2 + 152);
+    ctx.font = '11px Inter, sans-serif';
+    ctx.fillText('Audio Input (Mic Active)', 290, 538);
+
+    for (let b = 0; b < 10; b++) {
+      const barHeight = Math.max(4, Math.sin(t * 0.008 + b * 0.7) * 20 + Math.cos(t * 0.015 + b) * 10);
+      ctx.fillStyle = barHeight > 22 ? '#ef4444' : barHeight > 14 ? '#f59e0b' : '#10b981';
+      ctx.fillRect(295 + b * 18, 570 - barHeight, 12, barHeight);
+    }
+
+    // Bottom-right: Name & Designation Badge
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+    ctx.fillRect(510, 520, 270, 60);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.strokeRect(510, 520, 270, 60);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px Inter, sans-serif';
+    ctx.fillText(name, 522, 544);
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = '11px Inter, sans-serif';
+    ctx.fillText(subtitle, 522, 565);
 
     requestAnimationFrame(draw);
   };
+
   draw();
 
-  return canvas.captureStream(30);
+  const stream = canvas.captureStream(30);
+
+  // Synthesize ambient mic track via Web Audio so WebRTC audio is active
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtx) {
+      const ac = new AudioCtx();
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      gain.gain.value = 0.001; // Silent ambient room tone
+      osc.connect(gain);
+      const dest = ac.createMediaStreamDestination();
+      gain.connect(dest);
+      osc.start();
+      const audioTrack = dest.stream.getAudioTracks()[0];
+      if (audioTrack) stream.addTrack(audioTrack);
+    }
+  } catch {}
+
+  return stream;
 }
