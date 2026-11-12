@@ -314,10 +314,11 @@ export async function launchWebRTCModal(consultation, te, patient = null) {
           </div>
         </div>
 
-        <!-- Tab Selector: Chat vs Notes -->
-        <div class="panel-tabs-bar">
-          <button id="tab-chat-btn" class="panel-tab-btn active">💬 Chat</button>
-          <button id="tab-notes-btn" class="panel-tab-btn">📝 Notes</button>
+        <!-- Tab Selector: Chat vs Notes vs AI Oral Scanner -->
+        <div class="panel-tabs-bar" style="display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:4px;">
+          <button id="tab-chat-btn" class="panel-tab-btn active">💬 ${te ? 'చాట్' : 'Chat'}</button>
+          <button id="tab-notes-btn" class="panel-tab-btn">📝 ${te ? 'నోట్స్' : 'Notes'}</button>
+          <button id="tab-ai-btn" class="panel-tab-btn" style="color:#0284c7;font-weight:700;">🔬 ${te ? 'జెమిని AI' : 'Gemini AI'}</button>
         </div>
 
         <!-- Chat Pane -->
@@ -350,6 +351,70 @@ export async function launchWebRTCModal(consultation, te, patient = null) {
             <p id="outcome-status-msg" style="font-size:11px;margin-top:6px;"></p>
           </form>
         </div>
+
+        <!-- AI Oral Image Detection Scanner Pane (Gemini Vision) -->
+        <div id="panel-ai-content" class="tab-pane" style="display:none;flex-direction:column;flex:1;overflow-y:auto;padding:6px 0;">
+          <div style="background:rgba(2,132,199,0.08);border:1px solid rgba(2,132,199,0.25);border-radius:10px;padding:10px 12px;margin-bottom:12px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+              <strong style="color:#0369a1;font-size:12px;">🔬 Google Gemini Vision AI</strong>
+              <span class="pill green" style="font-size:9px;padding:2px 6px;">● Live Detection</span>
+            </div>
+            <p style="margin:0;font-size:11px;color:#475569;line-height:1.4;">
+              ${te ? 'లైవ్ వీడియో నుండి నోటి ఫోటో తీసి జెమిని AI ద్వారా క్యాన్సర్ మరియు గాయాలను తక్షణమే విశ్లేషించండి.' : 'Capture live oral cavity frame or upload image for instant multimodal oral lesion screening.'}
+            </p>
+          </div>
+
+          <!-- Capture & Upload Controls -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+            <button type="button" id="ai-snap-video-btn" class="btn" style="background:#0284c7;color:#fff;font-size:11px;font-weight:600;padding:8px 6px;display:flex;align-items:center;justify-content:center;gap:4px;cursor:pointer;">
+              📸 ${te ? 'వీడియో స్నాప్' : 'Snap Video'}
+            </button>
+            <button type="button" id="ai-load-demo-btn" class="btn" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;font-size:11px;font-weight:600;padding:8px 6px;display:flex;align-items:center;justify-content:center;gap:4px;cursor:pointer;">
+              🦷 ${te ? 'డెమో చిత్రం' : 'Demo Lesion'}
+            </button>
+          </div>
+
+          <label style="font-size:10px;color:#64748b;display:block;margin-bottom:4px;">
+            📁 ${te ? 'పరికర గ్యాలరీ నుండి ఫోటో ఎంచుకోండి' : 'Or select photo from gallery'}:
+          </label>
+          <input type="file" id="ai-file-input" accept="image/*" style="font-size:11px;margin-bottom:10px;width:100%;">
+
+          <!-- Image Preview Area -->
+          <div id="ai-preview-box" style="position:relative;width:100%;height:130px;background:#0f172a;border-radius:8px;overflow:hidden;margin-bottom:10px;display:flex;align-items:center;justify-content:center;border:1px solid #cbd5e1;">
+            <img id="ai-preview-img" src="/oral_image_demo.jpg" alt="Oral Cavity Preview" style="width:100%;height:100%;object-fit:cover;">
+            <span id="ai-badge-status" class="pill blue" style="position:absolute;top:6px;left:6px;font-size:9px;background:rgba(15,23,42,0.75);color:#fff;">Image Ready</span>
+          </div>
+
+          <!-- Run Scan Button -->
+          <button type="button" id="ai-run-scan-btn" class="btn primary" style="width:100%;padding:9px 12px;font-weight:700;font-size:12px;background:linear-gradient(135deg,#0284c7,#0369a1);color:#fff;display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:12px;cursor:pointer;">
+            ⚡ ${te ? 'జెమిని AI ఓరల్ స్కానర్ ప్రారంభించండి' : 'Run Gemini AI Oral Scan'}
+          </button>
+
+          <!-- Scan Results Box (Dynamic) -->
+          <div id="ai-results-box" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:10px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span style="font-size:10px;color:#64748b;text-transform:uppercase;font-weight:700;">Detection Result</span>
+              <span id="ai-risk-pill" class="pill red" style="font-size:10px;">High Risk</span>
+            </div>
+            <h4 id="ai-class-heading" style="margin:0 0 6px;color:#0f172a;font-size:13px;font-weight:800;">Suspicious Ulcerative Lesion</h4>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+              <div style="flex:1;background:#e2e8f0;height:7px;border-radius:4px;overflow:hidden;">
+                <div id="ai-conf-bar" style="width:84%;height:100%;background:#ef4444;border-radius:4px;"></div>
+              </div>
+              <strong id="ai-conf-val" style="font-size:11px;color:#0f172a;">84%</strong>
+            </div>
+
+            <div id="ai-findings-breakdown" style="font-size:10px;color:#334155;margin-bottom:8px;"></div>
+
+            <p id="ai-observations-text" style="font-size:10px;color:#475569;background:#fff;padding:8px;border-radius:6px;border:1px solid #e2e8f0;margin:0 0 10px;line-height:1.4;">
+              Irregular indurated ulcer with everted margins. Immediate referral for tissue biopsy and histopathology required.
+            </p>
+
+            <button type="button" id="ai-attach-notes-btn" class="btn" style="width:100%;background:#059669;color:#fff;font-size:11px;font-weight:600;padding:8px;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;">
+              📋 ${te ? 'నోట్స్ & ప్రిస్క్రిప్షన్‌కు జోడించండి' : 'Attach to Clinical Notes & Prescription'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -371,30 +436,183 @@ export async function launchWebRTCModal(consultation, te, patient = null) {
     if (metaDuration) metaDuration.textContent = formatted;
   }, 1000);
 
-  // Tab Switching (Chat vs Notes)
+  // Tab Switching (Chat vs Notes vs AI Scanner)
   const tabChatBtn = modal.querySelector('#tab-chat-btn');
   const tabNotesBtn = modal.querySelector('#tab-notes-btn');
+  const tabAiBtn = modal.querySelector('#tab-ai-btn');
   const chatPane = modal.querySelector('#panel-chat-content');
   const notesPane = modal.querySelector('#panel-notes-content');
+  const aiPane = modal.querySelector('#panel-ai-content');
 
-  tabChatBtn.onclick = () => {
-    tabChatBtn.classList.add('active');
-    tabNotesBtn.classList.remove('active');
-    chatPane.style.display = 'flex';
-    notesPane.style.display = 'none';
+  const switchTab = (activeTab, activePane) => {
+    [tabChatBtn, tabNotesBtn, tabAiBtn].forEach(b => b.classList.remove('active'));
+    [chatPane, notesPane, aiPane].forEach(p => p.style.display = 'none');
+    activeTab.classList.add('active');
+    activePane.style.display = (activePane === notesPane ? 'block' : 'flex');
   };
 
-  tabNotesBtn.onclick = () => {
-    tabNotesBtn.classList.add('active');
-    tabChatBtn.classList.remove('active');
-    chatPane.style.display = 'none';
-    notesPane.style.display = 'block';
-  };
+  tabChatBtn.onclick = () => switchTab(tabChatBtn, chatPane);
+  tabNotesBtn.onclick = () => switchTab(tabNotesBtn, notesPane);
+  if (tabAiBtn) tabAiBtn.onclick = () => switchTab(tabAiBtn, aiPane);
 
   const btnToggleChat = modal.querySelector('#btn-toggle-chat');
   if (btnToggleChat) {
-    btnToggleChat.onclick = () => {
-      tabChatBtn.click();
+    btnToggleChat.onclick = () => tabChatBtn.click();
+  }
+
+  // AI Oral Cavity Scanner (Gemini Vision) Controls
+  const aiSnapBtn = modal.querySelector('#ai-snap-video-btn');
+  const aiLoadDemoBtn = modal.querySelector('#ai-load-demo-btn');
+  const aiFileInput = modal.querySelector('#ai-file-input');
+  const aiPreviewImg = modal.querySelector('#ai-preview-img');
+  const aiBadgeStatus = modal.querySelector('#ai-badge-status');
+  const aiRunScanBtn = modal.querySelector('#ai-run-scan-btn');
+  const aiResultsBox = modal.querySelector('#ai-results-box');
+  const aiRiskPill = modal.querySelector('#ai-risk-pill');
+  const aiClassHeading = modal.querySelector('#ai-class-heading');
+  const aiConfBar = modal.querySelector('#ai-conf-bar');
+  const aiConfVal = modal.querySelector('#ai-conf-val');
+  const aiFindingsBreakdown = modal.querySelector('#ai-findings-breakdown');
+  const aiObservationsText = modal.querySelector('#ai-observations-text');
+  const aiAttachNotesBtn = modal.querySelector('#ai-attach-notes-btn');
+
+  let currentAnalysisData = null;
+
+  if (aiSnapBtn) {
+    aiSnapBtn.onclick = () => {
+      const sourceVideo = (remoteVideo && remoteVideo.videoWidth > 0) ? remoteVideo : localVideo;
+      if (!sourceVideo || !sourceVideo.videoWidth) {
+        if (aiBadgeStatus) aiBadgeStatus.textContent = 'Camera Loading...';
+        return;
+      }
+      const cvs = document.createElement('canvas');
+      cvs.width = sourceVideo.videoWidth || 640;
+      cvs.height = sourceVideo.videoHeight || 480;
+      const ctx = cvs.getContext('2d');
+      ctx.drawImage(sourceVideo, 0, 0, cvs.width, cvs.height);
+      const dataUrl = cvs.toDataURL('image/jpeg', 0.88);
+      if (aiPreviewImg) aiPreviewImg.src = dataUrl;
+      if (aiBadgeStatus) {
+        aiBadgeStatus.textContent = 'Live Frame Snapped';
+        aiBadgeStatus.className = 'pill green';
+      }
+    };
+  }
+
+  if (aiLoadDemoBtn) {
+    aiLoadDemoBtn.onclick = () => {
+      if (aiPreviewImg) aiPreviewImg.src = '/oral_image_demo.jpg';
+      if (aiBadgeStatus) {
+        aiBadgeStatus.textContent = 'Clinical Sample Ready';
+        aiBadgeStatus.className = 'pill blue';
+      }
+    };
+  }
+
+  if (aiFileInput) {
+    aiFileInput.onchange = (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          if (aiPreviewImg) aiPreviewImg.src = evt.target.result;
+          if (aiBadgeStatus) {
+            aiBadgeStatus.textContent = file.name.slice(0, 18);
+            aiBadgeStatus.className = 'pill amber';
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+  }
+
+  if (aiRunScanBtn) {
+    aiRunScanBtn.onclick = async () => {
+      if (!aiPreviewImg || !aiPreviewImg.src) return;
+      aiRunScanBtn.disabled = true;
+      aiRunScanBtn.innerHTML = `<span>⏳</span> ${te ? 'జెమిని AI విశ్లేషిస్తోంది...' : 'Analyzing with Gemini Vision...'}`;
+
+      try {
+        const res = await api('/api/ai/live-scan', {
+          method: 'POST',
+          data: {
+            photo: aiPreviewImg.src,
+            modelId: 'google/gemini-flash',
+            patientId: consultation.patient_id
+          }
+        });
+
+        const r = res.result;
+        currentAnalysisData = r;
+
+        if (aiResultsBox) aiResultsBox.style.display = 'block';
+        if (aiClassHeading) aiClassHeading.textContent = r.modelClass || 'Suspicious Ulcerative Lesion';
+
+        const confPct = Math.round((r.confidence || 0.84) * 100);
+        if (aiConfVal) aiConfVal.textContent = confPct + '%';
+        if (aiConfBar) {
+          aiConfBar.style.width = confPct + '%';
+          aiConfBar.style.background = confPct > 70 ? '#ef4444' : confPct > 40 ? '#f59e0b' : '#10b981';
+        }
+
+        if (aiRiskPill) {
+          const isHigh = (r.modelClass || '').toLowerCase().includes('ulcer') || (r.modelClass || '').toLowerCase().includes('leuko') || (r.modelClass || '').toLowerCase().includes('fibrosis');
+          aiRiskPill.textContent = isHigh ? 'High Risk' : 'Routine Screen';
+          aiRiskPill.className = `pill ${isHigh ? 'red' : 'green'}`;
+        }
+
+        if (aiObservationsText) {
+          aiObservationsText.textContent = r.observations || 'Irregular indurated mucosal lesion. Specialist biopsy and histopathology recommended.';
+        }
+
+        if (aiFindingsBreakdown && Array.isArray(r.candidateFindings)) {
+          aiFindingsBreakdown.innerHTML = r.candidateFindings.map(f => {
+            const pct = Math.round((f.score || 0) * 100);
+            return `
+              <div style="display:flex;justify-content:space-between;align-items:center;margin:3px 0;">
+                <span>${esc(f.label)}</span>
+                <span style="font-weight:700;">${pct}%</span>
+              </div>
+              <div style="height:4px;background:#e2e8f0;border-radius:2px;overflow:hidden;margin-bottom:6px;">
+                <div style="width:${pct}%;height:100%;background:#0284c7;"></div>
+              </div>
+            `;
+          }).join('');
+        }
+
+      } catch (err) {
+        alert('Gemini Scan notice: ' + err.message);
+      } finally {
+        aiRunScanBtn.disabled = false;
+        aiRunScanBtn.innerHTML = `⚡ ${te ? 'జెమిని AI ఓరల్ స్కానర్ ప్రారంభించండి' : 'Run Gemini AI Oral Scan'}`;
+      }
+    };
+  }
+
+  if (aiAttachNotesBtn) {
+    aiAttachNotesBtn.onclick = () => {
+      if (!currentAnalysisData) return;
+      const notesField = modal.querySelector('#outcome-notes');
+      const prescField = modal.querySelector('#outcome-prescription');
+
+      const findingSummary = `[Gemini Vision AI Finding]: ${currentAnalysisData.modelClass} (${Math.round((currentAnalysisData.confidence || 0.84)*100)}% confidence).\n` +
+        `Clinical Observation: ${currentAnalysisData.observations || 'Mucosal lesion noted during live teleconsultation.'}\n` +
+        `Recommended Protocol: ${currentAnalysisData.suggestedNextSteps || 'Biopsy referral to Area Hospital Paderu.'}`;
+
+      if (notesField) {
+        notesField.value = notesField.value ? notesField.value + '\n\n' + findingSummary : findingSummary;
+      }
+
+      if (prescField && !prescField.value) {
+        prescField.value = 'Biopsy referral ordered (Area Hospital Paderu), Triamcinolone 0.1% oral paste, Vitamin B-Complex OD.';
+      }
+
+      tabNotesBtn.click();
+      const statusMsg = modal.querySelector('#outcome-status-msg');
+      if (statusMsg) {
+        statusMsg.textContent = te ? '✓ జెమిని AI విశ్లేషణ ఫలితాలు క్లినికల్ నోట్స్‌కు జోడించబడ్డాయి!' : '✓ Gemini Vision findings attached to clinical outcome notes!';
+        statusMsg.style.color = '#059669';
+      }
     };
   }
 

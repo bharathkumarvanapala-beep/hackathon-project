@@ -133,6 +133,27 @@ export async function startServer(options={}){
      });
      return json(res,200,{analyses});
     }
+    if(path==='/api/ai/live-scan'&&method==='POST'){
+     allowed(s,['doctor','specialist','worker','asha','admin','hospital']);
+     const input=await body(req,10*1024*1024);
+     const photoPayload=input.photo||input.image;
+     if(!photoPayload)fail(400,'Oral image payload required.');
+     const modelId=input.modelId||'google/gemini-flash';
+     const patientId=input.patientId||null;
+     const result=await infer(photoPayload,{modelId});
+     if(patientId&&db.prepare('SELECT id FROM patients WHERE id=?').get(patientId)){
+       const analysisId=randomUUID();
+       const now=new Date().toISOString();
+       const findingsJson=JSON.stringify(result.candidateFindings||[]);
+       const warningsJson=JSON.stringify(result.warnings||[]);
+       try{
+         db.prepare(`INSERT INTO ai_analyses(id,patient_id,image_id,model_name,model_version,model_class,candidate_findings,warnings,status,requested_by,processed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
+           .run(analysisId,patientId,null,result.model||'Google Gemini 1.5 Flash (Vision)',result.revision||'1.0',result.modelClass||'Normal',findingsJson,warningsJson,'completed',s.id,now);
+         audit(db,s,'research_ai.completed',patientId,{model:result.model,modelClass:result.modelClass,analysisId,fromLiveConsultation:true});
+       }catch(e){console.warn('AI analysis record notice:',e);}
+     }
+     return json(res,200,{ok:true,result,model:result.model||'Google Gemini 1.5 Flash (Vision)'});
+    }
     if(path==='/api/ai/analyses'&&method==='GET'){
      allowed(s,['admin','doctor','specialist','navigator','hospital','worker']);
      const rows=db.prepare(`
