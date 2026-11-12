@@ -1,4 +1,4 @@
-const CACHE = 'drishti-v10';
+const CACHE = 'drishti-v11';
 const ASSETS = [
   '/',
   '/index.html',
@@ -6,10 +6,13 @@ const ASSETS = [
   '/glass.css',
   '/app.js',
   '/public-site.js',
+  '/district-dashboard.js',
   '/facilities-data.js',
   '/domain.js',
   '/client.js',
   '/auth.js',
+  '/i18n.js',
+  '/sync-drawer.js',
   '/assistant.js',
   '/assistant-domain.js',
   '/platform.js',
