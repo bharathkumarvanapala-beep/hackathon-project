@@ -78,6 +78,87 @@ export function researchMarkup(p,lang){
           </p>
           ${warningsHtml}
           ${findingsHtml}
+
+          <!-- BILINGUAL CLINICAL DECISION SUPPORT CARDS (PROBLEM DETECTION, ROOT CAUSE, NEXT FOLLOW-UP) -->
+          ${r.problemDetection || r.modelClass ? `
+            <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+              <!-- 1. Problem Detection -->
+              <div class="ai-clinical-card problem-card" style="background:#fff;border-left:4px solid #ea580c;border-radius:10px;padding:12px;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                  <span style="font-size:10px;font-weight:800;color:#c2410c;text-transform:uppercase;">
+                    1. Problem Detection · సమస్య గుర్తింపు
+                  </span>
+                  <span class="pill red" style="font-size:9.5px;padding:2px 6px;">
+                    ${esc(r.problemDetection?.severity?.toUpperCase() || 'HIGH')} SEVERITY
+                  </span>
+                </div>
+                <h4 style="margin:2px 0 2px;font-size:13.5px;font-weight:750;color:#0f172a;">
+                  ${esc(r.problemDetection?.condition || r.modelClass)}
+                </h4>
+                <div style="font-size:11.5px;color:#9a3412;font-weight:600;margin-bottom:6px;">
+                  ${esc(r.problemDetection?.conditionTe || 'అనుమానాస్పద అల్సర్ గాయం')}
+                </div>
+                <div style="background:#fff7ed;padding:8px 10px;border-radius:6px;font-size:11px;color:#9a3412;line-height:1.45;margin-bottom:6px;">
+                  <strong>Doctor Finding:</strong> ${esc(r.problemDetection?.doctorObservation || r.observations || 'Indurated mucosal lesion requiring biopsy.')}
+                </div>
+                <div style="background:#f8fafc;padding:8px 10px;border-radius:6px;font-size:11px;color:#1e293b;line-height:1.45;">
+                  <strong>Patient Understanding / రోగికి వివరణ:</strong><br>
+                  ${esc(r.problemDetection?.patientExplanation || 'Persistent non-healing sore requiring specialist testing.')}<br>
+                  <em style="color:#059669;">${esc(r.problemDetection?.patientExplanationTe || 'నోటిలో పుండు - తక్షణ ఆసుపత్రి పరీక్ష అవసరం.')}</em>
+                </div>
+              </div>
+
+              <!-- 2. Root Cause -->
+              <div class="ai-clinical-card root-cause-card" style="background:#fff;border-left:4px solid #4f46e5;border-radius:10px;padding:12px;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                  <span style="font-size:10px;font-weight:800;color:#4338ca;text-transform:uppercase;">
+                    2. Root Cause Analysis · మూల కారణాల విశ్లేషణ
+                  </span>
+                  <span class="pill" style="font-size:9.5px;background:#e0e7ff;color:#3730a3;">Etiology</span>
+                </div>
+                <h4 style="margin:2px 0 2px;font-size:12.5px;font-weight:700;color:#1e1b4b;">
+                  ${esc(r.rootCause?.primaryEtiology || 'Chronic Mucosal Irritant Exposure (Tobacco / Gutka)')}
+                </h4>
+                <div style="font-size:11px;color:#4f46e5;font-weight:600;margin-bottom:6px;">
+                  ${esc(r.rootCause?.primaryEtiologyTe || 'దీర్ఘకాలిక పొగాకు లేదా గుట్కా వాడకం వల్ల కణజాలం దెబ్బతినడం')}
+                </div>
+                <div style="font-size:11px;color:#334155;line-height:1.45;">
+                  <strong>Mechanism &amp; Habits:</strong> ${esc(r.rootCause?.habitCorrelation || 'Direct mucosal injury from tobacco nitrosamines preventing ulcer healing.')}
+                </div>
+                <div style="margin-top:6px;font-size:10.5px;color:#4338ca;">
+                  <em>${esc(r.rootCause?.habitCorrelationTe || 'పొగాకు, గుట్కా నమలడం వల్ల విడుదలయ్యే రసాయనాలు నాలుక కణాలను దెబ్బతీస్తాయి.')}</em>
+                </div>
+              </div>
+
+              <!-- 3. Next Follow-Up Protocol -->
+              <div class="ai-clinical-card followup-card" style="background:#fff;border-left:4px solid #16a34a;border-radius:10px;padding:12px;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                  <span style="font-size:10px;font-weight:800;color:#15803d;text-transform:uppercase;">
+                    3. Next Follow-Up Protocol · తదుపరి చర్యలు &amp; చికిత్స
+                  </span>
+                  <span class="pill red" style="font-size:9.5px;">
+                    ⏱️ ${esc(r.nextFollowUp?.urgency || 'Urgent (Within 7 Days)')}
+                  </span>
+                </div>
+                <div style="margin-bottom:6px;">
+                  <strong style="font-size:12px;color:#0f172a;">${esc(r.nextFollowUp?.facility || 'ITDA Area Hospital, Paderu')}</strong>
+                  <div style="font-size:11px;color:#059669;font-weight:600;">${esc(r.nextFollowUp?.facilityTe || 'ఐటీడీఏ ఏరియా ఆసుపత్రి, పాడేరు')}</div>
+                </div>
+                <ul style="margin:0;padding-left:16px;font-size:11px;color:#1e293b;line-height:1.5;">
+                  ${(r.nextFollowUp?.actionSteps || [
+                    'Urgent incisional biopsy & histopathology',
+                    'Teleconsultation with Oral Medicine Specialist',
+                    'Immediate tobacco/gutka cessation'
+                  ]).map(s => `<li>${esc(s)}</li>`).join('')}
+                </ul>
+                <div style="margin-top:10px;">
+                  <button type="button" class="btn" style="background:#0284c7;color:#fff;font-size:11px;font-weight:700;padding:7px 12px;border-radius:7px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;" data-start-video-consult="${esc(p.id)}">
+                    📹 ${te ? 'వీడియో కాల్ ప్రారంభించండి' : 'Start Video Consultation'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ` : ''}
         </div>
       `:''}
 

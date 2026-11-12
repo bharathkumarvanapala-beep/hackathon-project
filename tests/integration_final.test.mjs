@@ -125,6 +125,36 @@ async function testAll() {
   const aiStatus = await aiRes.json();
   console.log('[✓] Gemini / AI service status responsive:', JSON.stringify(aiStatus));
 
+  console.log('\n--- 7. Testing Gemini Clinical AI (Problem Detection, Root Cause, Next Follow-Up) ---');
+  const dummyPhoto = 'data:image/jpeg;base64,' + Buffer.from('oral-cavity-lesion-sample-data-bytes').toString('base64');
+  const scanRes = await fetch(base + '/api/ai/live-scan', {
+    method: 'POST',
+    headers: { Cookie: docCookie, 'X-CSRF-Token': docData.csrf, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      photo: dummyPhoto,
+      modelId: 'google/gemini-flash',
+      history: 'tobacco',
+      age: 52,
+      name: 'r',
+      imageName: '5.webp'
+    })
+  });
+  assert.equal(scanRes.status, 200);
+  const scanData = await scanRes.json();
+  assert.ok(scanData.ok);
+  assert.ok(scanData.result.problemDetection, 'problemDetection must exist');
+  assert.ok(scanData.result.problemDetection.condition, 'problemDetection.condition must exist');
+  assert.ok(scanData.result.problemDetection.conditionTe, 'problemDetection.conditionTe must exist');
+  assert.ok(scanData.result.rootCause, 'rootCause must exist');
+  assert.ok(scanData.result.rootCause.primaryEtiology, 'rootCause.primaryEtiology must exist');
+  assert.ok(scanData.result.rootCause.primaryEtiologyTe, 'rootCause.primaryEtiologyTe must exist');
+  assert.ok(scanData.result.nextFollowUp, 'nextFollowUp must exist');
+  assert.ok(scanData.result.nextFollowUp.facility, 'nextFollowUp.facility must exist');
+  assert.ok(scanData.result.nextFollowUp.actionSteps.length > 0, 'nextFollowUp.actionSteps must not be empty');
+  console.log('[✓] Problem Detection:', scanData.result.problemDetection.condition, '|', scanData.result.problemDetection.conditionTe);
+  console.log('[✓] Root Cause Analysis:', scanData.result.rootCause.primaryEtiology);
+  console.log('[✓] Clinical Next Follow-Up:', scanData.result.nextFollowUp.facility, '| Urgency:', scanData.result.nextFollowUp.urgency);
+
   console.log('\n==========================================================');
   console.log('  ALL INTEGRATION TESTS PASSED 100% (READY FOR DEMO)');
   console.log('==========================================================');

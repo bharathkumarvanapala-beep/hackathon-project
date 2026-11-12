@@ -3558,3 +3558,154 @@ a.native-connect{text-decoration:none}.top-actions svg{vertical-align:middle}.si
   flex-shrink: 0;
 }
 
+/* =========================================================
+   BILINGUAL CLINICAL AI INTELLIGENCE SYSTEM
+   Problem Detection · Root Cause Analysis · Next Follow-Up
+   ========================================================= */
+.screening-ai-analysis {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-clinical-header-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, rgba(6, 95, 70, 0.08), rgba(2, 132, 199, 0.08));
+  border: 1px solid rgba(5, 150, 105, 0.25);
+  border-radius: 10px;
+}
+
+.ai-clinical-header-banner strong {
+  color: #065f46;
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-clinical-card {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ai-clinical-card.problem-card {
+  border: 1.5px solid #fed7aa;
+  border-left: 4px solid #ea580c;
+}
+
+.ai-clinical-card.root-cause-card {
+  border: 1.5px solid #c7d2fe;
+  border-left: 4px solid #4f46e5;
+}
+
+.ai-clinical-card.followup-card {
+  border: 1.5px solid #bbf7d0;
+  border-left: 4px solid #16a34a;
+}
+
+.ai-card-category-label {
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.problem-card .ai-card-category-label { color: #c2410c; }
+.root-cause-card .ai-card-category-label { color: #4338ca; }
+.followup-card .ai-card-category-label { color: #15803d; }
+
+.ai-card-title {
+  margin: 4px 0 2px;
+  font-size: 14px;
+  font-weight: 750;
+  color: #0f172a;
+}
+
+.ai-card-sub-te {
+  font-size: 11.5px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  line-height: 1.35;
+}
+
+.problem-card .ai-card-sub-te { color: #b45309; }
+.root-cause-card .ai-card-sub-te { color: #4f46e5; }
+.followup-card .ai-card-sub-te { color: #047857; }
+
+.ai-info-callout {
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
+.ai-info-callout.doctor-callout {
+  background: #fff7ed;
+  color: #9a3412;
+  border: 1px solid #ffedd5;
+}
+
+.ai-info-callout.patient-callout {
+  background: #f8fafc;
+  color: #1e293b;
+  border: 1px solid #e2e8f0;
+}
+
+.ai-action-buttons-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ai-action-btn-video {
+  background: linear-gradient(135deg, #0284c7, #0369a1);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.ai-action-btn-video:hover {
+  opacity: 0.92;
+}
+
+.ai-action-btn-referral {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1.5px solid #a7f3d0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.ai-action-btn-referral:hover {
+  background: #d1fae5;
+}
+

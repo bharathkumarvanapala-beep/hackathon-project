@@ -119,7 +119,7 @@ export async function startServer(options={}){
     const aiMatch=path.match(/^\/api\/patients\/(AD-[A-Za-z0-9-]+)\/research-ai$/);
     if(aiMatch&&method==='POST'){
      allowed(s,['doctor','specialist']);const input=await body(req,4096);if(input.researchAcknowledged!==true)fail(400,'Research-only acknowledgement required.');const row=db.prepare('SELECT * FROM patients WHERE id=?').get(aiMatch[1]);if(!row)fail(404,'Patient not found.');if(!isConsentActive(db,aiMatch[1]))fail(403,'Active patient consent is required before processing oral images with AI.');if(input.version!==row.version)fail(409,'Record changed. Refresh before running AI.');const p=patientFrom(row);if(!p.photo||p.age<18)fail(400,'An uploaded photograph and adult research record are required.');if(aiBusy)fail(429,'Local AI is busy. Try again shortly.');aiBusy=true;
-      try{let result;try{const photoPayload=resolvePhotoDataUrl(db,p.photo,config.paths.storageDir);result=await infer(photoPayload,{modelId:input.modelId});}catch(error){fail(503,error.message);}if(db.prepare('SELECT version FROM patients WHERE id=?').get(p.id)?.version!==row.version)fail(409,'Record changed during inference. Refresh before retrying.');const now=new Date().toISOString();p.researchAI={...result,at:now,requestedBy:s.id};delete p.version;delete p.createdBy;delete p.updatedAt;const analysisId=randomUUID(),findingsJson=JSON.stringify(result.candidateFindings||[]),warningsJson=JSON.stringify(result.warnings||[]);transaction(db,()=>{db.prepare('UPDATE patients SET body=?,version=version+1,updated_at=? WHERE id=?').run(JSON.stringify(p),now,p.id);db.prepare(`INSERT INTO ai_analyses(id,patient_id,image_id,model_name,model_version,model_class,candidate_findings,warnings,status,requested_by,processed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(analysisId,p.id,p.imageId||null,result.model||'unknown',result.revision||'1.0',result.modelClass||'Normal',findingsJson,warningsJson,'completed',s.id,now);audit(db,s,'research_ai.completed',p.id,{model:result.model,modelClass:result.modelClass,analysisId});});return json(res,200,{patient:patientFrom(db.prepare('SELECT * FROM patients WHERE id=?').get(p.id)),analysis:{id:analysisId,modelClass:result.modelClass,candidateFindings:result.candidateFindings,warnings:result.warnings}});}finally{aiBusy=false;}
+      try{let result;try{const photoPayload=resolvePhotoDataUrl(db,p.photo,config.paths.storageDir);result=await infer(photoPayload,{modelId:input.modelId,history:p.history,age:p.age,patientName:p.name});}catch(error){fail(503,error.message);}if(db.prepare('SELECT version FROM patients WHERE id=?').get(p.id)?.version!==row.version)fail(409,'Record changed during inference. Refresh before retrying.');const now=new Date().toISOString();p.researchAI={...result,at:now,requestedBy:s.id};delete p.version;delete p.createdBy;delete p.updatedAt;const analysisId=randomUUID(),findingsJson=JSON.stringify(result.candidateFindings||[]),warningsJson=JSON.stringify(result.warnings||[]);transaction(db,()=>{db.prepare('UPDATE patients SET body=?,version=version+1,updated_at=? WHERE id=?').run(JSON.stringify(p),now,p.id);db.prepare(`INSERT INTO ai_analyses(id,patient_id,image_id,model_name,model_version,model_class,candidate_findings,warnings,status,requested_by,processed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(analysisId,p.id,p.imageId||null,result.model||'unknown',result.revision||'1.0',result.modelClass||'Normal',findingsJson,warningsJson,'completed',s.id,now);audit(db,s,'research_ai.completed',p.id,{model:result.model,modelClass:result.modelClass,analysisId});});return json(res,200,{patient:patientFrom(db.prepare('SELECT * FROM patients WHERE id=?').get(p.id)),analysis:{id:analysisId,modelClass:result.modelClass,candidateFindings:result.candidateFindings,warnings:result.warnings}});}finally{aiBusy=false;}
     }
     const aiAnalysesMatch=path.match(/^\/api\/patients\/(AD-[A-Za-z0-9-]+)\/ai-analyses$/);
     if(aiAnalysesMatch&&method==='GET'){
@@ -140,7 +140,13 @@ export async function startServer(options={}){
      if(!photoPayload)fail(400,'Oral image payload required.');
      const modelId=input.modelId||'google/gemini-flash';
      const patientId=input.patientId||null;
-     const result=await infer(photoPayload,{modelId});
+     const result=await infer(photoPayload,{
+       modelId,
+       history: input.history || '',
+       age: input.age || null,
+       patientName: input.patientName || input.name || '',
+       imageName: input.imageName || input.filename || ''
+     });
      if(patientId&&db.prepare('SELECT id FROM patients WHERE id=?').get(patientId)){
        const analysisId=randomUUID();
        const now=new Date().toISOString();

@@ -390,28 +390,69 @@ export async function launchWebRTCModal(consultation, te, patient = null) {
             ⚡ ${te ? 'జెమిని AI ఓరల్ స్కానర్ ప్రారంభించండి' : 'Run Gemini AI Oral Scan'}
           </button>
 
-          <!-- Scan Results Box (Dynamic) -->
-          <div id="ai-results-box" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:10px;">
+          <!-- Scan Results Box (Dynamic 3-Section Clinical Intelligence) -->
+          <div id="ai-results-box" style="display:none;background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;padding:12px;margin-bottom:10px;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-              <span style="font-size:10px;color:#64748b;text-transform:uppercase;font-weight:700;">Detection Result</span>
-              <span id="ai-risk-pill" class="pill red" style="font-size:10px;">High Risk</span>
+              <span style="font-size:10px;color:#0369a1;text-transform:uppercase;font-weight:800;letter-spacing:0.5px;">🔬 Gemini AI Clinical Intelligence</span>
+              <span id="ai-risk-pill" class="pill red" style="font-size:9.5px;padding:2px 6px;">⚠️ High Severity</span>
             </div>
-            <h4 id="ai-class-heading" style="margin:0 0 6px;color:#0f172a;font-size:13px;font-weight:800;">Suspicious Ulcerative Lesion</h4>
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-              <div style="flex:1;background:#e2e8f0;height:7px;border-radius:4px;overflow:hidden;">
-                <div id="ai-conf-bar" style="width:84%;height:100%;background:#ef4444;border-radius:4px;"></div>
+
+            <!-- 1. Problem Detection -->
+            <div style="background:#fff;border-left:3.5px solid #ea580c;border-radius:8px;padding:8px 10px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;">
+                <span style="font-size:9.5px;font-weight:800;color:#c2410c;text-transform:uppercase;">1. Problem Detection · సమస్య గుర్తింపు</span>
+                <strong id="ai-conf-val" style="font-size:10px;color:#059669;">94% Match</strong>
               </div>
-              <strong id="ai-conf-val" style="font-size:11px;color:#0f172a;">84%</strong>
+              <h4 id="ai-class-heading" style="margin:2px 0;color:#0f172a;font-size:12.5px;font-weight:800;">Suspicious Ulcerative Lesion</h4>
+              <div id="ai-class-te" style="font-size:10.5px;color:#9a3412;font-weight:600;margin-bottom:4px;">అనుమానాస్పద అల్సర్ గాయం</div>
+              <div style="height:4px;background:#e2e8f0;border-radius:2px;overflow:hidden;margin-bottom:6px;">
+                <div id="ai-conf-bar" style="width:94%;height:100%;background:#ef4444;"></div>
+              </div>
+              <p id="ai-observations-text" style="font-size:10px;color:#334155;background:#fff7ed;padding:6px 8px;border-radius:6px;border:1px solid #fed7aa;margin:0 0 4px;line-height:1.4;">
+                Indurated, irregular ulcerative lesion with rolled margins.
+              </p>
+              <div id="ai-patient-explain-box" style="font-size:9.5px;color:#1e293b;background:#f8fafc;padding:5px 8px;border-radius:6px;border:1px solid #e2e8f0;line-height:1.35;">
+                <strong>Patient Explanation:</strong> <span id="ai-patient-explain-text">Non-healing sore on tongue requiring urgent specialist testing.</span>
+              </div>
             </div>
 
-            <div id="ai-findings-breakdown" style="font-size:10px;color:#334155;margin-bottom:8px;"></div>
+            <!-- 2. Root Cause -->
+            <div style="background:#fff;border-left:3.5px solid #4f46e5;border-radius:8px;padding:8px 10px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+              <span style="font-size:9.5px;font-weight:800;color:#4338ca;text-transform:uppercase;">2. Root Cause · మూల కారణం</span>
+              <div id="ai-root-cause-title" style="font-size:11px;font-weight:700;color:#1e1b4b;margin-top:2px;">
+                Chronic Mucosal Irritation (Tobacco / Gutka Exposure)
+              </div>
+              <div id="ai-root-cause-te" style="font-size:10px;color:#4f46e5;font-weight:600;margin-bottom:4px;">
+                దీర్ఘకాలిక పొగాకు/గుట్కా వాడకం వల్ల కణజాలం క్షీణించడం
+              </div>
+              <div id="ai-root-cause-mech" style="font-size:9.5px;color:#475569;line-height:1.35;">
+                Tobacco nitrosamines damage mucosal cellular DNA preventing tissue healing.
+              </div>
+            </div>
 
-            <p id="ai-observations-text" style="font-size:10px;color:#475569;background:#fff;padding:8px;border-radius:6px;border:1px solid #e2e8f0;margin:0 0 10px;line-height:1.4;">
-              Irregular indurated ulcer with everted margins. Immediate referral for tissue biopsy and histopathology required.
-            </p>
+            <!-- 3. Next Follow-Up -->
+            <div style="background:#fff;border-left:3.5px solid #16a34a;border-radius:8px;padding:8px 10px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-size:9.5px;font-weight:800;color:#15803d;text-transform:uppercase;">3. Next Follow-Up · తదుపరి చర్యలు</span>
+                <span id="ai-urgency-badge" class="pill red" style="font-size:9px;padding:1px 5px;">Within 7 Days</span>
+              </div>
+              <div id="ai-facility-name" style="font-size:11px;font-weight:700;color:#0f172a;margin-top:2px;">
+                Area Hospital Paderu (Specialist Oral Oncology)
+              </div>
+              <div id="ai-facility-te" style="font-size:9.5px;color:#059669;font-weight:600;margin-bottom:4px;">
+                ఐటీడీఏ ఏరియా ఆసుపత్రి, పాడేరు
+              </div>
+              <ul id="ai-action-list" style="margin:0;padding-left:14px;font-size:9.5px;color:#1e293b;line-height:1.4;">
+                <li>Urgent incisional biopsy &amp; histopathology</li>
+                <li>Complete cessation of tobacco/gutka</li>
+                <li>Topical protective gel &amp; antioxidant support</li>
+              </ul>
+            </div>
 
-            <button type="button" id="ai-attach-notes-btn" class="btn" style="width:100%;background:#059669;color:#fff;font-size:11px;font-weight:600;padding:8px;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;">
-              📋 ${te ? 'నోట్స్ & ప్రిస్క్రిప్షన్‌కు జోడించండి' : 'Attach to Clinical Notes & Prescription'}
+            <div id="ai-findings-breakdown" style="font-size:9.5px;color:#334155;margin-bottom:8px;"></div>
+
+            <button type="button" id="ai-attach-notes-btn" class="btn" style="width:100%;background:#059669;color:#fff;font-size:11px;font-weight:700;padding:8px;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;border-radius:8px;">
+              📋 ${te ? 'నోట్స్ & ప్రిస్క్రిప్షన్‌కు జోడించండి' : 'Attach Clinical Plan to Notes & Rx'}
             </button>
           </div>
         </div>
@@ -544,11 +585,17 @@ export async function launchWebRTCModal(consultation, te, patient = null) {
 
         const r = res.result;
         currentAnalysisData = r;
+        const pd = r.problemDetection;
+        const rc = r.rootCause;
+        const nf = r.nextFollowUp;
 
         if (aiResultsBox) aiResultsBox.style.display = 'block';
-        if (aiClassHeading) aiClassHeading.textContent = r.modelClass || 'Suspicious Ulcerative Lesion';
+        if (aiClassHeading) aiClassHeading.textContent = pd?.condition || r.modelClass || 'Suspicious Ulcerative Lesion';
 
-        const confPct = Math.round((r.confidence || 0.84) * 100);
+        const classTeEl = modal.querySelector('#ai-class-te');
+        if (classTeEl && pd?.conditionTe) classTeEl.textContent = pd.conditionTe;
+
+        const confPct = Math.round(((pd?.confidence || r.confidence) || 0.94) * 100);
         if (aiConfVal) aiConfVal.textContent = confPct + '%';
         if (aiConfBar) {
           aiConfBar.style.width = confPct + '%';
@@ -556,13 +603,41 @@ export async function launchWebRTCModal(consultation, te, patient = null) {
         }
 
         if (aiRiskPill) {
-          const isHigh = (r.modelClass || '').toLowerCase().includes('ulcer') || (r.modelClass || '').toLowerCase().includes('leuko') || (r.modelClass || '').toLowerCase().includes('fibrosis');
-          aiRiskPill.textContent = isHigh ? 'High Risk' : 'Routine Screen';
-          aiRiskPill.className = `pill ${isHigh ? 'red' : 'green'}`;
+          const isHigh = pd?.severity === 'high' || (r.modelClass || '').toLowerCase().includes('ulcer');
+          aiRiskPill.textContent = isHigh ? '⚠️ High Severity' : 'Moderate Severity';
+          aiRiskPill.className = `pill ${isHigh ? 'red' : 'amber'}`;
         }
 
         if (aiObservationsText) {
-          aiObservationsText.textContent = r.observations || 'Irregular indurated mucosal lesion. Specialist biopsy and histopathology recommended.';
+          aiObservationsText.textContent = pd?.doctorObservation || r.observations || 'Irregular indurated mucosal lesion. Specialist biopsy and histopathology recommended.';
+        }
+
+        const patExpEl = modal.querySelector('#ai-patient-explain-text');
+        if (patExpEl && pd?.patientExplanation) {
+          patExpEl.innerHTML = `${pd.patientExplanation}<br><em style="color:#059669;">${pd.patientExplanationTe || ''}</em>`;
+        }
+
+        const rootTitleEl = modal.querySelector('#ai-root-cause-title');
+        if (rootTitleEl && rc?.primaryEtiology) rootTitleEl.textContent = rc.primaryEtiology;
+
+        const rootTeEl = modal.querySelector('#ai-root-cause-te');
+        if (rootTeEl && rc?.primaryEtiologyTe) rootTeEl.textContent = rc.primaryEtiologyTe;
+
+        const rootMechEl = modal.querySelector('#ai-root-cause-mech');
+        if (rootMechEl && rc?.habitCorrelation) rootMechEl.textContent = rc.habitCorrelation;
+
+        const facNameEl = modal.querySelector('#ai-facility-name');
+        if (facNameEl && nf?.facility) facNameEl.textContent = nf.facility;
+
+        const facTeEl = modal.querySelector('#ai-facility-te');
+        if (facTeEl && nf?.facilityTe) facTeEl.textContent = nf.facilityTe;
+
+        const urgBadgeEl = modal.querySelector('#ai-urgency-badge');
+        if (urgBadgeEl && nf?.urgency) urgBadgeEl.textContent = nf.urgency;
+
+        const actionListEl = modal.querySelector('#ai-action-list');
+        if (actionListEl && Array.isArray(nf?.actionSteps)) {
+          actionListEl.innerHTML = nf.actionSteps.map(s => `<li>${s}</li>`).join('');
         }
 
         if (aiFindingsBreakdown && Array.isArray(r.candidateFindings)) {
@@ -594,23 +669,40 @@ export async function launchWebRTCModal(consultation, te, patient = null) {
       if (!currentAnalysisData) return;
       const notesField = modal.querySelector('#outcome-notes');
       const prescField = modal.querySelector('#outcome-prescription');
+      const pd = currentAnalysisData.problemDetection;
+      const rc = currentAnalysisData.rootCause;
+      const nf = currentAnalysisData.nextFollowUp;
 
-      const findingSummary = `[Gemini Vision AI Finding]: ${currentAnalysisData.modelClass} (${Math.round((currentAnalysisData.confidence || 0.84)*100)}% confidence).\n` +
-        `Clinical Observation: ${currentAnalysisData.observations || 'Mucosal lesion noted during live teleconsultation.'}\n` +
-        `Recommended Protocol: ${currentAnalysisData.suggestedNextSteps || 'Biopsy referral to Area Hospital Paderu.'}`;
+      const findingSummary =
+        `=== GEMINI VISION AI CLINICAL DECISION SUPPORT ===\n` +
+        `1. PROBLEM DETECTION: ${pd?.condition || currentAnalysisData.modelClass} (${Math.round(((pd?.confidence || currentAnalysisData.confidence) || 0.94)*100)}% match)\n` +
+        `   • Clinical Observation: ${pd?.doctorObservation || currentAnalysisData.observations}\n` +
+        `   • Patient Understanding (EN): ${pd?.patientExplanation || 'Persistent oral lesion requiring biopsy.'}\n` +
+        `   • Patient Understanding (TE): ${pd?.patientExplanationTe || 'నోటిలో పుండు - తక్షణ పరీక్ష అవసరం.'}\n\n` +
+        `2. ROOT CAUSE ANALYSIS: ${rc?.primaryEtiology || 'Chronic mucosal irritant exposure'}\n` +
+        `   • Habit Link: ${rc?.habitCorrelation || 'Smokeless tobacco / gutka exposure'}\n` +
+        `   • Root Cause (TE): ${rc?.primaryEtiologyTe || ''}\n\n` +
+        `3. NEXT FOLLOW-UP PROTOCOL:\n` +
+        `   • Recommended Urgency: ${nf?.urgency || 'Immediate / Within 7 Days'}\n` +
+        `   • Referral Facility: ${nf?.facility || 'Area Hospital Paderu (Specialist Oral Oncology Unit)'}\n` +
+        (nf?.actionSteps ? nf.actionSteps.map(s => `   - ${s}`).join('\n') : `   - Biopsy and tobacco cessation.`);
 
       if (notesField) {
         notesField.value = notesField.value ? notesField.value + '\n\n' + findingSummary : findingSummary;
       }
 
-      if (prescField && !prescField.value) {
-        prescField.value = 'Biopsy referral ordered (Area Hospital Paderu), Triamcinolone 0.1% oral paste, Vitamin B-Complex OD.';
+      if (prescField) {
+        prescField.value =
+          `1. Biopsy Referral: Area Hospital Paderu (Oral Oncology OPD within 7 days)\n` +
+          `2. Triamcinolone Acetonide 0.1% oral paste - apply TDS after food for 7 days\n` +
+          `3. Cap Antioxidant (Lycopene 8mg + Zinc + Selenium) - 1 capsule daily after lunch x 30 days\n` +
+          `4. Strict Tobacco/Gutka Cessation: Immediate de-addiction counselling initiated`;
       }
 
       tabNotesBtn.click();
       const statusMsg = modal.querySelector('#outcome-status-msg');
       if (statusMsg) {
-        statusMsg.textContent = te ? '✓ జెమిని AI విశ్లేషణ ఫలితాలు క్లినికల్ నోట్స్‌కు జోడించబడ్డాయి!' : '✓ Gemini Vision findings attached to clinical outcome notes!';
+        statusMsg.textContent = te ? '✓ జెమిని AI విశ్లేషణ ఫలితాలు & ప్రిస్క్రిప్షన్ క్లినికల్ నోట్స్‌కు జోడించబడ్డాయి!' : '✓ Problem Detection, Root Cause & Follow-up attached to clinical notes!';
         statusMsg.style.color = '#059669';
       }
     };
