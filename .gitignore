@@ -13,3 +13,4 @@ dist/
 *.apk
 *.aab
 care-cloudflare/
+livekit-server.exe

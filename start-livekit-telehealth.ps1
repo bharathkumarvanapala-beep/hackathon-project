@@ -10,7 +10,10 @@ Write-Host "  Aarogya Drishti — Local LiveKit Telehealth Server" -ForegroundCo
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 # 1. Locate LiveKit Server Executable
-$livekitExe = "C:\Users\AI PC\Downloads\livekit_1.13.11_windows_amd64\livekit-server.exe"
+$livekitExe = Join-Path $workspaceDir "livekit-server.exe"
+if (-not (Test-Path $livekitExe)) {
+  $livekitExe = "C:\Users\AI PC\Downloads\livekit_1.13.11_windows_amd64\livekit-server.exe"
+}
 if (-not (Test-Path $livekitExe)) {
   $found = Get-ChildItem -Path "$env:USERPROFILE\Downloads" -Filter "livekit-server.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
   if ($found) { $livekitExe = $found.FullName }
