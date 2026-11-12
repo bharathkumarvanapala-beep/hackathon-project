@@ -3709,3 +3709,38 @@ a.native-connect{text-decoration:none}.top-actions svg{vertical-align:middle}.si
   background: #d1fae5;
 }
 
+/* =========================================================
+   REAL-TIME ORAL LESION AI SCANNER HUD & BOUNDING BOX
+   ========================================================= */
+.ai-lesion-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.ai-scanner-grid-hud {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(5, 150, 105, 0) 0%, rgba(5, 150, 105, 0.18) 50%, rgba(5, 150, 105, 0) 100%);
+  background-size: 100% 200%;
+  animation: aiRadarScan 2.5s infinite linear;
+  pointer-events: none;
+}
+
+@keyframes aiRadarScan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+.ai-bounding-box {
+  animation: aiPulseBox 2s infinite ease-in-out;
+}
+
+@keyframes aiPulseBox {
+  0%, 100% { box-shadow: 0 0 10px rgba(239, 68, 68, 0.5), inset 0 0 8px rgba(239, 68, 68, 0.2); }
+  50% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.85), inset 0 0 14px rgba(239, 68, 68, 0.35); }
+}
+

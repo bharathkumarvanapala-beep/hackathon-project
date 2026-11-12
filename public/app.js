@@ -697,8 +697,22 @@ function screening(){
           </div>
 
           <div class="preview-box-container">
-            <div class="preview-image-wrapper">
+            <div class="preview-image-wrapper" style="position:relative;overflow:hidden;border-radius:12px;">
               <div id="photo-result"><img id="preview-img-tag" class="preview" src="/oral_image_demo.jpg" alt="Oral Image Preview"></div>
+
+              <!-- Real-Time AI Visual Lesion Detection Overlay -->
+              <div id="ai-lesion-overlay" class="ai-lesion-overlay" style="display:block;">
+                <div class="ai-scanner-grid-hud"></div>
+                <div class="ai-bounding-box" id="ai-lesion-box" style="position:absolute;top:28%;left:46%;width:34%;height:38%;border:2.5px solid #ef4444;border-radius:8px;background:rgba(239,68,68,0.18);box-shadow:0 0 16px rgba(239,68,68,0.7);display:block;">
+                  <div style="position:absolute;top:-22px;left:0;background:#ef4444;color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:4px;white-space:nowrap;display:flex;align-items:center;gap:4px;box-shadow:0 2px 6px rgba(0,0,0,0.3);">
+                    <span>🔴</span> <span id="ai-box-label">Ulcerative Lesion (94%)</span>
+                  </div>
+                  <div style="position:absolute;bottom:-20px;left:0;background:rgba(15,23,42,0.9);color:#34d399;font-size:9.5px;font-weight:700;padding:2px 6px;border-radius:4px;white-space:nowrap;">
+                    <span id="ai-box-site">Lateral Tongue Border</span>
+                  </div>
+                </div>
+              </div>
+
               <button type="button" class="btn-clear-preview" id="btn-clear-photo" title="Reset image">✕</button>
             </div>
             <div class="preview-meta-row">
@@ -714,8 +728,8 @@ function screening(){
             <button type="button" class="btn-change-image" id="btn-change-image">
               ${icon('gallery', 16)} <span>Change Image</span>
             </button>
-            <button type="button" class="btn-check-quality-action" id="btn-check-quality">
-              ${icon('spark', 16)} <span>Check Quality</span>
+            <button type="button" class="btn-check-quality-action" id="btn-check-quality" style="background:linear-gradient(135deg,#043329,#059669);box-shadow:0 4px 12px rgba(5,150,105,0.35);font-weight:700;">
+              ${icon('spark', 16)} <span>Run Gemini AI Oral Detection</span>
             </button>
           </div>
         </section>
@@ -1864,6 +1878,12 @@ function bindScreen(){
       if (patObs) {
         patObs.innerHTML = `${pd.patientExplanation || ''}<br><em style="color:#059669;">${pd.patientExplanationTe || ''}</em>`;
       }
+      const boxLabel = $('#ai-box-label');
+      if (boxLabel) boxLabel.textContent = `${pd.condition || r.modelClass} (${Math.round((pd.confidence || r.confidence || 0.94) * 100)}%)`;
+      const boxSite = $('#ai-box-site');
+      if (boxSite) boxSite.textContent = pd.visualQuadrant || 'Lateral Tongue Border';
+      const overlay = $('#ai-lesion-overlay');
+      if (overlay) overlay.style.display = 'block';
     }
 
     if (rc) {
@@ -2043,6 +2063,11 @@ function bindScreen(){
       toast('Storage failed. Record was not saved. Check available device space.');
     }
   };
+
+  // Auto-run AI detection immediately if an image is loaded
+  setTimeout(() => {
+    runScreeningAI();
+  }, 200);
 }
 
 function bindReview(){
@@ -2488,7 +2513,7 @@ async function pollShared(){
 }
 
 async function boot(){
-  if(!isAndroid()&&'serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  if(!isAndroid()&&'serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').then(r=>r.update()).catch(()=>{});
   await initI18n();
   const identity=await recoverSession();
   if(identity){

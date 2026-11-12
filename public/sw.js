@@ -1,4 +1,4 @@
-const CACHE = 'drishti-v11';
+const CACHE = 'drishti-v14-ai';
 const ASSETS = [
   '/',
   '/index.html',
@@ -45,7 +45,13 @@ self.addEventListener('activate', event =>
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET' || new URL(event.request.url).pathname.startsWith('/api/')) return;
   event.respondWith(
-    fetch(event.request).catch(() =>
+    fetch(event.request, { cache: 'no-cache' }).then(networkRes => {
+      if (networkRes && networkRes.status === 200) {
+        const copy = networkRes.clone();
+        caches.open(CACHE).then(c => c.put(event.request, copy));
+      }
+      return networkRes;
+    }).catch(() =>
       caches.match(event.request).then(r => r || (event.request.mode === 'navigate' ? caches.match('/') : Response.error()))
     )
   );
